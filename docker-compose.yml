@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: edi
+      POSTGRES_PASSWORD: edi
+      POSTGRES_DB: edi
+    ports: ["${EDI_PG_PORT:-5432}:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edi"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["${EDI_REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      EDI_DATABASE_URL: postgresql+psycopg2://edi:edi@postgres:5432/edi
+      EDI_REDIS_URL: redis://redis:6379/0
+      EDI_SECRET_KEY: ${EDI_SECRET_KEY:-change-me-in-production-please}
+      EDI_DATA_DIR: /app/data
+      EDI_CORS_ORIGINS: '["http://localhost:3000"]'
+      EDI_SCHEDULER_ENABLED: "false"   # the worker service owns scheduling
+    volumes: ["./data:/app/data"]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      EDI_DATABASE_URL: postgresql+psycopg2://edi:edi@postgres:5432/edi
+      EDI_REDIS_URL: redis://redis:6379/0
+      EDI_SECRET_KEY: ${EDI_SECRET_KEY:-change-me-in-production-please}
+      EDI_DATA_DIR: /app/data
+    volumes: ["./data:/app/data"]
+    depends_on:
+      backend: { condition: service_started }
+    command: ["python", "-m", "backend.workers.jobs"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports: ["3000:3000"]
+    depends_on: [backend]
+
+volumes:
+  pgdata:

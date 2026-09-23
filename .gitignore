@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/metadata.db*
+data/duckdb/
+data/uploads/
+.env
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+.pytest_cache/
+
+# generated demo data (recreate with scripts/generate_demo_data.py)
+data/samples/

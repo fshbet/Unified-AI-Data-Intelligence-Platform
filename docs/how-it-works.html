@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How It Works — Enterprise Data Intelligence</title>
+<meta name="description" content="How the Enterprise Data Intelligence platform turns connected data sources into a governed semantic layer and evidence-backed, cross-domain AI answers.">
+<style>
+  :root{
+    --bg:#f6f7f9; --surface:#fff; --surface-2:#f1f3f6; --border:#e4e7ec;
+    --text:#0f172a; --muted:#5b677d; --primary:#2563eb; --accent:#7c3aed;
+    --success:#059669; --warning:#c2740a; --danger:#dc2626;
+    --code-bg:#f5f6f8; --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.04);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0b1020; --surface:#121a2e; --surface-2:#1a2440; --border:#243052;
+      --text:#e6ebf5; --muted:#9aa7c4; --primary:#6f9bff; --accent:#a78bfa;
+      --success:#34d399; --warning:#fbbf24; --danger:#f87171;
+      --code-bg:#0e1526; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0b1020; --surface:#121a2e; --surface-2:#1a2440; --border:#243052;
+    --text:#e6ebf5; --muted:#9aa7c4; --primary:#6f9bff; --accent:#a78bfa;
+    --success:#34d399; --warning:#fbbf24; --danger:#f87171;
+    --code-bg:#0e1526; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:80px}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+       font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+
+  header.top{position:sticky;top:0;z-index:50;background:color-mix(in oklab,var(--surface) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .top-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:12px}
+  .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--primary),var(--accent));
+    display:grid;place-items:center;color:#fff;flex:0 0 auto}
+  .brand b{display:block;font-size:14px;line-height:1.2}
+  .brand span{display:block;font-size:11px;color:var(--muted)}
+  .top .spacer{flex:1}
+  button.theme{background:var(--surface-2);border:1px solid var(--border);color:var(--muted);
+    border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.theme:hover{color:var(--text)}
+
+  .layout{max-width:1180px;margin:0 auto;padding:0 16px;display:grid;
+    grid-template-columns:220px minmax(0,1fr);gap:36px;align-items:start}
+  nav.toc{position:sticky;top:76px;padding:24px 0;max-height:calc(100vh - 80px);overflow-y:auto}
+  nav.toc a{display:block;padding:4px 10px;margin:1px 0;border-left:2px solid transparent;
+    color:var(--muted);text-decoration:none;font-size:13px;border-radius:0 6px 6px 0}
+  nav.toc a:hover{color:var(--text);background:var(--surface-2)}
+  nav.toc a.active{color:var(--primary);border-left-color:var(--primary);
+    background:color-mix(in oklab,var(--primary) 8%,transparent);font-weight:600}
+  nav.toc .grp{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+    opacity:.7;margin:14px 0 4px 10px}
+
+  main{padding:28px 0 96px;min-width:0}
+  h1{font-size:2rem;line-height:1.2;margin:.2em 0 .3em;letter-spacing:-.02em}
+  h2{font-size:1.32rem;margin:2.4em 0 .5em;padding-top:.3em;letter-spacing:-.01em;scroll-margin-top:80px}
+  h3{font-size:1.03rem;margin:1.7em 0 .4em}
+  p{margin:.7em 0}
+  a{color:var(--primary)}
+  ul,ol{margin:.6em 0;padding-left:1.35em}
+  li{margin:.3em 0}
+  .lede{font-size:1.08rem;color:var(--muted);margin-bottom:1.4em}
+  hr{border:0;border-top:1px solid var(--border);margin:2.5em 0}
+
+  code{font-family:var(--mono);font-size:.855em;background:var(--code-bg);
+    border:1px solid var(--border);border-radius:5px;padding:.08em .35em}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.55;margin:1em 0}
+  pre code{background:none;border:0;padding:0;font-size:inherit}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:18px 20px;margin:1.2em 0;box-shadow:var(--shadow)}
+  .card h3{margin-top:0}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin:1.2em 0}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:15px 17px}
+  .tile b{display:block;font-size:13px;margin-bottom:3px}
+  .tile p{margin:0;font-size:13px;color:var(--muted);line-height:1.55}
+
+  .note{border-left:3px solid var(--primary);background:color-mix(in oklab,var(--primary) 6%,transparent);
+    border-radius:0 10px 10px 0;padding:12px 16px;margin:1.2em 0;font-size:14.5px}
+  .note.warn{border-left-color:var(--warning);background:color-mix(in oklab,var(--warning) 9%,transparent)}
+  .note.good{border-left-color:var(--success);background:color-mix(in oklab,var(--success) 8%,transparent)}
+  .note strong{font-weight:650}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:1.1em 0;display:block;overflow-x:auto}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--surface-2);font-weight:600;font-size:12.5px;white-space:nowrap}
+  td code{white-space:nowrap}
+
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;
+    background:var(--surface-2);color:var(--muted);border:1px solid var(--border);white-space:nowrap}
+  .pill.b{background:color-mix(in oklab,var(--primary) 13%,transparent);color:var(--primary);border-color:transparent}
+  .pill.g{background:color-mix(in oklab,var(--success) 15%,transparent);color:var(--success);border-color:transparent}
+  .pill.w{background:color-mix(in oklab,var(--warning) 18%,transparent);color:var(--warning);border-color:transparent}
+  .pill.r{background:color-mix(in oklab,var(--danger) 13%,transparent);color:var(--danger);border-color:transparent}
+  .pill.a{background:color-mix(in oklab,var(--accent) 14%,transparent);color:var(--accent);border-color:transparent}
+
+  figure{margin:1.4em 0}
+  figure svg{width:100%;height:auto;display:block;background:var(--surface);
+    border:1px solid var(--border);border-radius:12px}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:7px;text-align:center}
+
+  .steps{counter-reset:s;list-style:none;padding:0;margin:1.2em 0}
+  .steps>li{counter-increment:s;position:relative;padding:0 0 0 44px;margin:0 0 16px}
+  .steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;
+    border-radius:8px;background:var(--primary);color:#fff;display:grid;place-items:center;
+    font-size:13px;font-weight:650}
+  .steps>li b{display:block;margin-bottom:2px}
+  .steps>li p{margin:.2em 0;font-size:14.5px;color:var(--muted)}
+
+  .kv{font-family:var(--mono);font-size:12.5px}
+  .neg{color:var(--danger);font-weight:600}
+  .pos{color:var(--success);font-weight:600}
+  footer{border-top:1px solid var(--border);margin-top:40px;padding:22px 0;color:var(--muted);font-size:13px}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr;gap:0}
+    nav.toc{position:static;max-height:none;padding:14px 0;border-bottom:1px solid var(--border);
+      display:flex;flex-wrap:wrap;gap:2px}
+    nav.toc .grp{display:none}
+    nav.toc a{border-left:0;border-radius:7px;padding:4px 9px}
+    nav.toc a.active{border-left:0}
+    h1{font-size:1.6rem}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="logo" aria-hidden="true">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="18" cy="6" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18" r="2.6"/>
+        <path d="M8.4 10.8 15.6 7.2M8.4 13.2l7.2 3.6"/>
+      </svg>
+    </div>
+    <div class="brand"><b>Enterprise Data Intelligence</b><span>How it works</span></div>
+    <div class="spacer"></div>
+    <button class="theme" id="themeBtn" type="button">Dark</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc">
+    <div class="grp">Start here</div>
+    <a href="#idea">The core idea</a>
+    <a href="#run">Running the app</a>
+    <a href="#architecture">Architecture</a>
+    <div class="grp">The pipeline</div>
+    <a href="#connectors">1 · Connectors</a>
+    <a href="#catalog">2 · Metadata catalog</a>
+    <a href="#semantic">3 · Semantic layer</a>
+    <a href="#graph">4 · Relationship graph</a>
+    <a href="#queryengine">5 · Query engine</a>
+    <a href="#investigation">6 · Investigation engine</a>
+    <a href="#ai">7 · AI reasoning</a>
+    <div class="grp">In practice</div>
+    <a href="#walkthrough">Worked example</a>
+    <a href="#quality">Data quality</a>
+    <a href="#insights">Proactive insights</a>
+    <a href="#security">Security</a>
+    <div class="grp">Reference</div>
+    <a href="#screens">The screens</a>
+    <a href="#layout">Project layout</a>
+    <a href="#extend">Extending it</a>
+    <a href="#trouble">Troubleshooting</a>
+  </nav>
+
+  <main>
+    <h1>How the platform works</h1>
+    <p class="lede">
+      This is not “ask an LLM to look at a database”. The system builds an organisational
+      <strong>semantic understanding layer</strong> over every connected system, then lets an AI
+      investigate that whole ecosystem like an analyst would — decomposing metrics, following
+      relationships into other domains, weighing evidence, and citing the exact query behind every number.
+    </p>
+
+    <!-- ───────────────────────────────────────────── idea -->
+    <h2 id="idea">The core idea</h2>
+    <p>
+      Most “chat with your data” tools point a language model at one table and hope. That fails on the
+      questions that matter, because the answer to <em>“why did revenue drop?”</em> is almost never inside
+      the revenue table. It is in HR (a team left), in inventory (a product went out of stock), in
+      operations (deliveries slipped), in support (complaints spiked) — spread across systems that use
+      different names for the same customer.
+    </p>
+    <p>So the platform inverts the problem. It spends its effort on <em>understanding</em> first:</p>
+
+    <div class="grid">
+      <div class="tile"><b>Catalog everything</b><p>Every source is discovered, profiled column by column, classified for PII, and described in business terms.</p></div>
+      <div class="tile"><b>Unify the meaning</b><p>Governed metrics, a business glossary, and canonical entities that resolve <code>customer_id</code> = <code>customer_code</code> = <code>client_id</code>.</p></div>
+      <div class="tile"><b>Map the connections</b><p>A reviewed relationship graph that says which tables join to which, and how — within and across systems.</p></div>
+      <div class="tile"><b>Then reason</b><p>The AI navigates that map, runs targeted read-only SQL, and must back every claim with a query reference.</p></div>
+    </div>
+
+    <div class="note">
+      <strong>The rule that shapes everything:</strong> no evidence, no claim. Numbers come from executed
+      queries, never from the model's memory. Correlation is always labelled as correlation. When data is
+      missing, the answer says so instead of guessing.
+    </div>
+
+    <!-- ───────────────────────────────────────────── run -->
+    <h2 id="run">Running the app</h2>
+    <p>Double-click <code>start.bat</code> in the project root. On the first run it sets everything up; afterwards it just starts.</p>
+
+    <ol class="steps">
+      <li><b>Checks prerequisites</b><p>Python 3.11+ and Node 20+ must be on your PATH. It tells you what is missing rather than failing cryptically.</p></li>
+      <li><b>Installs dependencies (first run only)</b><p>Creates <code>.venv</code>, installs the backend requirements, then runs <code>npm install</code> for the frontend. This takes a few minutes once.</p></li>
+      <li><b>Builds the demo (first run only)</b><p>Generates the synthetic enterprise dataset and seeds the catalog: 7 sources, 19 governed metrics, glossary, entities, relationships and insights.</p></li>
+      <li><b>Picks a free port</b><p>Tries 8000, then 8010, 8020… and writes the winner into <code>frontend/.env.local</code> so the UI always talks to the right backend.</p></li>
+      <li><b>Starts both servers and waits</b><p>Opens two windows — backend and frontend — polls until both answer, then opens your browser at the app.</p></li>
+    </ol>
+
+    <div class="grid">
+      <div class="tile"><b>App</b><p><code>http://localhost:3000</code><br>Sign in as <code>admin@example.com</code> / <code>admin123</code></p></div>
+      <div class="tile"><b>API docs</b><p><code>http://localhost:8000/api/docs</code><br>Live OpenAPI / Swagger UI</p></div>
+      <div class="tile"><b>To stop</b><p>Close the two server windows. Nothing is left running in the background.</p></div>
+    </div>
+
+    <p>Three demo accounts exist so you can see permissions in action:</p>
+    <table>
+      <thead><tr><th>Account</th><th>Password</th><th>Role</th><th>Sees</th></tr></thead>
+      <tbody>
+        <tr><td><code>admin@example.com</code></td><td><code>admin123</code></td><td><span class="pill b">admin</span></td><td>Everything, unmasked. Manages users, permissions and AI providers.</td></tr>
+        <tr><td><code>analyst@example.com</code></td><td><code>demo1234</code></td><td><span class="pill a">analyst</span></td><td>Edits metadata and metrics; HR rows filtered to a few departments.</td></tr>
+        <tr><td><code>viewer@example.com</code></td><td><code>demo1234</code></td><td><span class="pill">viewer</span></td><td>Read-only. PII masked, salary and CRM contacts hidden entirely.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note good">
+      <strong>The AI is optional.</strong> With no provider configured the assistant still answers — the
+      investigation engine renders a full structured analysis with real numbers and citations. Adding a
+      model (local Ollama, OpenAI, Anthropic, Gemini, Azure, OpenRouter…) in <em>Administration → AI Providers</em>
+      adds the narrative and lets the model call tools for follow-up evidence.
+    </div>
+
+    <!-- ───────────────────────────────────────────── architecture -->
+    <h2 id="architecture">Architecture</h2>
+    <p>
+      Seven layers, each usable on its own. Data flows up from the sources; a question flows down from
+      the top and comes back as an evidence-backed answer.
+    </p>
+
+    <figure>
+      <svg viewBox="0 0 860 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Layered architecture from data sources up through connectors, catalog, semantic layer, graph and query engine to the AI reasoning layer and the answer">
+        <defs>
+          <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="system-ui,sans-serif" color="var(--muted)">
+
+          <!-- sources row -->
+          <g font-size="11">
+            <rect x="24" y="404" width="118" height="42" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="83" y="422" text-anchor="middle" fill="var(--text)" font-weight="600" font-size="11.5">Databases</text>
+            <text x="83" y="436" text-anchor="middle" fill="var(--muted)" font-size="10">Postgres · MySQL · MSSQL</text>
+
+            <rect x="154" y="404" width="118" height="42" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="213" y="422" text-anchor="middle" fill="var(--text)" font-weight="600" font-size="11.5">Files</text>
+            <text x="213" y="436" text-anchor="middle" fill="var(--muted)" font-size="10">CSV · Excel · JSON</text>
+
+            <rect x="284" y="404" width="118" height="42" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="343" y="422" text-anchor="middle" fill="var(--text)" font-weight="600" font-size="11.5">NoSQL</text>
+            <text x="343" y="436" text-anchor="middle" fill="var(--muted)" font-size="10">Redis · MongoDB</text>
+
+            <rect x="414" y="404" width="118" height="42" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="473" y="422" text-anchor="middle" fill="var(--text)" font-weight="600" font-size="11.5">APIs</text>
+            <text x="473" y="436" text-anchor="middle" fill="var(--muted)" font-size="10">REST · GraphQL</text>
+          </g>
+
+          <!-- stack -->
+          <g>
+            <rect x="24" y="348" width="508" height="40" rx="9" fill="color-mix(in oklab,var(--primary) 10%,transparent)" stroke="var(--primary)" stroke-opacity=".5"/>
+            <text x="42" y="366" fill="var(--text)" font-size="12.5" font-weight="650">1 · Connector layer</text>
+            <text x="42" y="380" fill="var(--muted)" font-size="10.5">one interface per source type · non-SQL sources materialise into DuckDB</text>
+
+            <rect x="24" y="292" width="508" height="40" rx="9" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="42" y="310" fill="var(--text)" font-size="12.5" font-weight="650">2 · Metadata catalog</text>
+            <text x="42" y="324" fill="var(--muted)" font-size="10.5">schema · profiling · statistics · PII classification · descriptions</text>
+
+            <rect x="24" y="236" width="508" height="40" rx="9" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="42" y="254" fill="var(--text)" font-size="12.5" font-weight="650">3 · Semantic layer</text>
+            <text x="42" y="268" fill="var(--muted)" font-size="10.5">metrics · glossary · canonical entities · versioning · search</text>
+
+            <rect x="24" y="180" width="508" height="40" rx="9" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="42" y="198" fill="var(--text)" font-size="12.5" font-weight="650">4 · Relationship graph</text>
+            <text x="42" y="212" fill="var(--muted)" font-size="10.5">approved joins + entity links · multi-hop traversal</text>
+
+            <rect x="24" y="124" width="508" height="40" rx="9" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="42" y="142" fill="var(--text)" font-size="12.5" font-weight="650">5 · Query &amp; analytics engine</text>
+            <text x="42" y="156" fill="var(--muted)" font-size="10.5">read-only validation · dialect SQL · permissions · investigation</text>
+
+            <rect x="24" y="68" width="508" height="40" rx="9" fill="color-mix(in oklab,var(--accent) 12%,transparent)" stroke="var(--accent)" stroke-opacity=".5"/>
+            <text x="42" y="86" fill="var(--text)" font-size="12.5" font-weight="650">6 · AI reasoning layer</text>
+            <text x="42" y="100" fill="var(--muted)" font-size="10.5">planner · tool calling · synthesis · citation validation</text>
+
+            <rect x="24" y="16" width="508" height="36" rx="9" fill="var(--surface)" stroke="var(--border)" stroke-dasharray="4 3"/>
+            <text x="278" y="39" text-anchor="middle" fill="var(--text)" font-size="12.5" font-weight="650">Evidence-backed answer</text>
+          </g>
+
+          <!-- flow arrow up -->
+          <g color="var(--muted)" opacity=".65">
+            <path d="M552 400 L552 40" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar)"/>
+            <text x="560" y="230" fill="var(--muted)" font-size="10.5" transform="rotate(-90 560 230)" text-anchor="middle">understanding accumulates</text>
+          </g>
+
+          <!-- cross-cutting -->
+          <g>
+            <rect x="600" y="68" width="236" height="150" rx="10" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="618" y="90" fill="var(--text)" font-size="12" font-weight="650">Cross-cutting</text>
+            <text x="618" y="112" fill="var(--muted)" font-size="11">Security · RBAC · row filters</text>
+            <text x="618" y="132" fill="var(--muted)" font-size="11">PII masking</text>
+            <text x="618" y="152" fill="var(--muted)" font-size="11">Audit log · query log</text>
+            <text x="618" y="172" fill="var(--muted)" font-size="11">Data quality engine</text>
+            <text x="618" y="192" fill="var(--muted)" font-size="11">Background jobs · scheduler</text>
+            <text x="618" y="210" fill="var(--muted)" font-size="11">Cost &amp; usage tracking</text>
+
+            <rect x="600" y="236" width="236" height="152" rx="10" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="618" y="258" fill="var(--text)" font-size="12" font-weight="650">Stored where</text>
+            <text x="618" y="280" fill="var(--muted)" font-size="11">Catalog → SQLite / PostgreSQL</text>
+            <text x="618" y="300" fill="var(--muted)" font-size="11">Materialised data → DuckDB</text>
+            <text x="618" y="320" fill="var(--muted)" font-size="11">Search index → catalog DB</text>
+            <text x="618" y="340" fill="var(--muted)" font-size="11">Uploads → data/uploads</text>
+            <text x="618" y="362" fill="var(--muted)" font-size="11">Live DBs → queried in place,</text>
+            <text x="618" y="378" fill="var(--muted)" font-size="11">never copied</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Each layer only depends on the one below it, so a connector, a metric or the AI model can be swapped without touching the rest.</figcaption>
+    </figure>
+
+    <!-- ───────────────────────────────────────────── connectors -->
+    <h2 id="connectors">1 · Connectors</h2>
+    <p>
+      Every source type implements one small interface, and registers itself. The core never imports a
+      database driver, so adding a source does not touch the reasoning engine.
+    </p>
+<pre><code>class DataConnector:
+    def test_connection(self): ...
+    def list_databases(self): ...
+    def list_schemas(self): ...
+    def list_tables(self): ...
+    def get_schema(self, table): ...
+    def sample_data(self, table, n): ...
+    def execute_query(self, query, limit, timeout): ...
+    def get_row_count(self, table): ...
+    def get_statistics(self, table): ...</code></pre>
+
+    <table>
+      <thead><tr><th>Category</th><th>Supported</th><th>How it is queried</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill b">Databases</span></td><td>PostgreSQL, MySQL / MariaDB, SQL Server, Oracle, SQLite, DuckDB</td><td>Queried live, in place. Aggregation is pushed down; only results come back.</td></tr>
+        <tr><td><span class="pill g">Files</span></td><td>CSV, TSV, Excel (each sheet becomes a table), JSON, JSONL, Parquet, XML</td><td>Read by DuckDB directly — streamed, so a large file never lands in memory.</td></tr>
+        <tr><td><span class="pill w">NoSQL</span></td><td>Redis, MongoDB</td><td>Normalised into tables, then queryable as SQL.</td></tr>
+        <tr><td><span class="pill a">APIs</span></td><td>REST (bearer / basic / key header, paginated), GraphQL</td><td>Fetched, flattened, schema auto-detected, materialised.</td></tr>
+        <tr><td><span class="pill r">BI models</span></td><td>Power BI semantic models, Tableau Server / Cloud</td><td>Rows materialised <em>and</em> the platform's own semantic model imported — see below.</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      Redis needs care, because it is not relational. Keys are scanned by pattern and normalised by
+      prefix: hashes and JSON documents under <code>order:*</code> become an <code>order</code> table with
+      real columns, while lists, sets and sorted sets land in a generic <code>redis_keys</code> table with
+      their key, type, TTL and value. Mongo documents are flattened the same way — nested
+      <code>{"v":{"x":1}}</code> becomes a column <code>v_x</code> — without altering the source.
+    </p>
+
+    <div class="note">
+      <strong>Why everything ends up as SQL.</strong> Sources that cannot be queried relationally are
+      materialised into a private DuckDB file per source. One query path means one place to enforce
+      read-only rules, permissions and row limits — and the AI never needs to learn six query languages.
+    </div>
+
+    <!-- ───────────────────────────────────────────── catalog -->
+    <h2 id="catalog">2 · Metadata catalog</h2>
+    <p>Connecting a source kicks off a pipeline that ends with the source fully described:</p>
+
+    <figure>
+      <svg viewBox="0 0 860 108" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sync pipeline: discover schema, profile, classify PII, describe, quality checks, suggest relationships, index">
+        <g font-family="system-ui,sans-serif" font-size="11">
+          <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0,0 L6,2.6 L0,5.2 z" fill="var(--muted)"/></marker></defs>
+          <g>
+            <rect x="6" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="59" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Discover</text>
+            <text x="59" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">tables · columns · FKs</text>
+
+            <rect x="128" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="181" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Profile</text>
+            <text x="181" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">stats per column</text>
+
+            <rect x="250" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="303" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Classify</text>
+            <text x="303" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">PII · sensitivity</text>
+
+            <rect x="372" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="425" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Describe</text>
+            <text x="425" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">business meaning</text>
+
+            <rect x="494" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="547" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Check</text>
+            <text x="547" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">quality rules</text>
+
+            <rect x="616" y="30" width="106" height="46" rx="8" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="669" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Relate</text>
+            <text x="669" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">suggest joins</text>
+
+            <rect x="738" y="30" width="106" height="46" rx="8" fill="color-mix(in oklab,var(--success) 13%,transparent)" stroke="var(--success)" stroke-opacity=".45"/>
+            <text x="791" y="50" text-anchor="middle" fill="var(--text)" font-weight="600">Index</text>
+            <text x="791" y="65" text-anchor="middle" fill="var(--muted)" font-size="10">searchable</text>
+          </g>
+          <g stroke="var(--muted)" stroke-width="1.2" opacity=".6">
+            <path d="M114 53 h10" marker-end="url(#ar2)"/><path d="M236 53 h10" marker-end="url(#ar2)"/>
+            <path d="M358 53 h10" marker-end="url(#ar2)"/><path d="M480 53 h10" marker-end="url(#ar2)"/>
+            <path d="M602 53 h10" marker-end="url(#ar2)"/><path d="M724 53 h10" marker-end="url(#ar2)"/>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Runs as a background job with live progress; re-runs are incremental and idempotent.</figcaption>
+    </figure>
+
+    <p>Profiling computes, per column: row and null counts, null percentage, distinct count and cardinality,
+      duplicates, min / max / mean / median / standard deviation, percentiles, IQR outliers, frequency
+      distribution, date range, and sample values. From those numbers it infers a <em>semantic type</em> —
+      is this an identifier, a measure, a dimension, a date, a flag? — which is what later lets the system
+      decide that <code>region</code> is worth decomposing by and <code>order_id</code> is not.</p>
+
+    <p>PII detection runs on both column names and value patterns (email, phone, Aadhaar, PAN, credit card
+      with a Luhn check, bank account, IP). Each column gets a sensitivity of
+      <span class="pill">public</span> <span class="pill w">sensitive</span>
+      <span class="pill r">pii</span> <span class="pill r">restricted</span>, which drives masking everywhere downstream.</p>
+
+    <div class="note">
+      <strong>Descriptions are suggested, never silently applied.</strong> Heuristics write a first draft;
+      an AI model can propose better business descriptions, semantic types and units. Both appear as
+      <em>suggestions</em> in the UI that a steward accepts or edits — and every accepted edit creates a
+      version you can look back at.
+    </div>
+
+    <!-- ───────────────────────────────────────────── semantic -->
+    <h2 id="semantic">3 · Semantic layer</h2>
+    <p>This is where raw columns become business language. Four things live here.</p>
+
+    <h3>Governed metrics</h3>
+    <p>A metric is a formula the organisation agrees on, so the AI never invents its own arithmetic:</p>
+<pre><code>name        revenue
+formula     SUM(revenue)
+filters     —                          # posted_revenue uses: invoice_status = 'POSTED'
+date column order_date
+unit        INR          format  currency      direction  up
+dimensions  region, product_id, channel, discount_pct, customer_id, employee_id</code></pre>
+    <p>
+      The <code>dimensions</code> list is what the investigation engine decomposes by. Point-in-time
+      metrics — headcount, for instance, where you count people <em>active during</em> a period rather than
+      events inside it — use placeholders:
+    </p>
+<pre><code>sales_headcount   COUNT(*)
+  WHERE department = 'Sales'
+    AND hire_date &lt; '{period_end}'
+    AND (exit_date IS NULL OR exit_date &gt;= '{period_start}')</code></pre>
+
+    <h3>Business glossary</h3>
+    <p>
+      Definitions, owners, synonyms and rules. Synonyms matter more than they look: they are how the
+      planner recognises that “turnover”, “top line” and “sales revenue” all mean the <code>revenue</code>
+      metric. Rules capture the fine print — <em>revenue is recognised when invoice status is POSTED;
+      cancelled invoices are excluded; currency is INR</em>.
+    </p>
+
+    <h3>Canonical entities — cross-system resolution</h3>
+    <p>The same customer is called four different things in four systems. An entity maps them to one identity:</p>
+
+    <figure>
+      <svg viewBox="0 0 860 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four differently named identifier columns across Finance, CRM, Support and Sales all mapping to one canonical Customer entity">
+        <g font-family="system-ui,sans-serif" font-size="11.5">
+          <rect x="330" y="72" width="200" height="46" rx="10" fill="color-mix(in oklab,var(--accent) 14%,transparent)" stroke="var(--accent)" stroke-opacity=".55"/>
+          <text x="430" y="92" text-anchor="middle" fill="var(--text)" font-weight="700" font-size="13">Customer</text>
+          <text x="430" y="108" text-anchor="middle" fill="var(--muted)" font-size="10.5">canonical entity</text>
+
+          <g fill="var(--surface-2)" stroke="var(--border)">
+            <rect x="30" y="16" width="200" height="38" rx="8"/>
+            <rect x="30" y="66" width="200" height="38" rx="8"/>
+            <rect x="30" y="116" width="200" height="38" rx="8"/>
+            <rect x="630" y="66" width="200" height="38" rx="8"/>
+          </g>
+          <g font-family="ui-monospace,monospace" font-size="11">
+            <text x="46" y="34" fill="var(--text)">finance.customer_id</text>
+            <text x="46" y="48" fill="var(--muted)" font-size="10" font-family="system-ui">Finance · C0042</text>
+            <text x="46" y="84" fill="var(--text)">crm.customer_code</text>
+            <text x="46" y="98" fill="var(--muted)" font-size="10" font-family="system-ui">CRM · C0042</text>
+            <text x="46" y="134" fill="var(--text)">support.client_id</text>
+            <text x="46" y="148" fill="var(--muted)" font-size="10" font-family="system-ui">Support · C0042</text>
+            <text x="646" y="84" fill="var(--text)">sales.customer_id</text>
+            <text x="646" y="98" fill="var(--muted)" font-size="10" font-family="system-ui">Sales · C0042</text>
+          </g>
+          <g stroke="var(--accent)" stroke-width="1.4" fill="none" opacity=".65" stroke-dasharray="4 3">
+            <path d="M230 35 C 285 35, 290 88, 330 92"/>
+            <path d="M230 85 C 285 85, 295 92, 330 94"/>
+            <path d="M230 135 C 285 135, 290 100, 330 97"/>
+            <path d="M630 85 C 585 85, 570 94, 530 95"/>
+          </g>
+        </g>
+      </svg>
+      <figcaption>Entity links let the engine hop between systems that share no foreign key.</figcaption>
+    </figure>
+
+    <h3>Search and versioning</h3>
+    <p>
+      Everything in the catalog — tables, columns, metrics, glossary terms, relationships — is indexed for
+      search. It is a hybrid: a BM25 lexical score always, plus cosine similarity over embeddings when an
+      embedding model is configured. This is what turns the vague phrase “employee attrition” into the
+      concrete tables and metrics worth looking at. And every definition change is versioned, with a
+      before/after diff and an author.
+    </p>
+    <div class="note warn">
+      <strong>Search never replaces querying.</strong> It is used only to <em>find</em> where a concept lives.
+      The number itself always comes from SQL executed against the authoritative source.
+    </div>
+
+    <h3>Importing a BI platform's semantic model</h3>
+    <p>
+      Power BI and Tableau already hold governed definitions — measures with formulas, declared
+      relationships, curated field descriptions. Re-deriving that would be both wasteful and less
+      accurate than what the business already agreed on, so it is imported directly.
+    </p>
+    <table>
+      <thead><tr><th>From the BI model</th><th>Becomes</th></tr></thead>
+      <tbody>
+        <tr><td>Table &amp; field descriptions</td><td>Table descriptions and column business definitions</td></tr>
+        <tr><td>Measures (DAX / Tableau formulas)</td><td>Governed metrics</td></tr>
+        <tr><td>Declared relationships</td><td>Relationships, <strong>pre-approved</strong> — the BI model is authoritative</td></tr>
+        <tr><td>Format strings</td><td>Metric unit and format (currency / percent)</td></tr>
+      </tbody>
+    </table>
+    <p>Formulas are translated by a real parser, not pattern matching:</p>
+<pre><code>SUM('Sales'[Revenue])                                        ->  SUM("Revenue")
+COUNTROWS('Orders')                                          ->  COUNT(*)
+DIVIDE(SUM('S'[Profit]), SUM('S'[Revenue]))                  ->  (SUM("Profit")) / NULLIF((SUM("Revenue")), 0)
+CALCULATE(SUM('I'[Amount]), 'I'[Status] = "POSTED")          ->  SUM("Amount")   WHERE "Status" = 'POSTED'
+[Revenue] - [Cost]                                           ->  inlined from the other measures</code></pre>
+
+    <div class="note good">
+      <strong>Try it without a tenant.</strong> <code>python scripts/bi_demo_stubs.py</code> starts
+      local stand-ins for both platforms that speak the real wire protocols, and prints the exact
+      settings to paste into <em>Add data source</em>. The same stubs back the integration tests.
+    </div>
+
+    <div class="note warn">
+      <strong>What cannot be translated is refused, not guessed.</strong> Time intelligence
+      (<code>TOTALYTD</code>, <code>SAMEPERIODLASTYEAR</code>), context transitions (<code>ALL</code>,
+      <code>ALLEXCEPT</code>, <code>FILTER</code>), iterators (<code>SUMX</code>), formulas spanning
+      two tables, Tableau window functions — each of these is imported as a
+      <span class="pill w">definition only</span> metric. It keeps its native formula, stays
+      searchable and quotable, and the engine <em>refuses</em> to produce a number for it. The AI is
+      told the same and must explain the definition rather than estimate. A silently mistranslated
+      measure would produce a confident wrong answer — exactly the failure this platform exists to prevent.
+    </div>
+
+    <!-- ───────────────────────────────────────────── graph -->
+    <h2 id="graph">4 · Relationship graph</h2>
+    <p>
+      Relationship discovery compares every identifier-like column against every other, combining five
+      signals: declared foreign keys, name similarity with business aliases
+      (<code>cust</code>→customer, <code>sku</code>→product, <code>emp</code>→employee), type compatibility,
+      cardinality (is one side unique?), and — the decisive one — <strong>actual value overlap</strong>
+      measured on sampled distinct values.
+    </p>
+<pre><code>Suggested relationship
+  sales.customer_id  →  crm.accounts.customer_code        confidence 94%
+  Reason: name similarity 100%, matching types, 99.2% of sampled identifiers overlap</code></pre>
+
+    <div class="note warn">
+      <strong>Nothing high-impact is created silently.</strong> Discovery only <em>suggests</em>. A human
+      approves or rejects each one, and the AI traverses approved relationships only. You can see exactly
+      which joins the reasoning is allowed to use.
+    </div>
+
+    <p>
+      Approved relationships plus entity mappings form a graph whose nodes are tables. Breadth-first
+      traversal from a starting table finds everything reachable within N hops, and that is precisely how
+      a question about revenue reaches the HR table — not because someone hard-coded it, but because the
+      path exists:
+    </p>
+<pre><code>sales ──(employee_id → employee_id)──&gt; hr
+sales ──(entity:Product)────────────&gt; inventory
+sales ──(entity:Customer)───────────&gt; support
+sales ──(order_id → order_id)───────&gt; finance_invoices</code></pre>
+
+    <!-- ───────────────────────────────────────────── query engine -->
+    <h2 id="queryengine">5 · Query engine</h2>
+    <p>Every query — whether typed by a person, generated from a metric, or written by the model — passes through the same gate.</p>
+
+    <ol class="steps">
+      <li><b>Validate</b><p>Single statement only. <code>SELECT</code> / <code>WITH</code> only. Writes, DDL and dangerous functions (<code>read_csv</code>, <code>pg_sleep</code>, <code>xp_cmdshell</code>, file and network access) are blocked — with string literals stripped first, so a keyword inside <code>'DROP TABLE x'</code> is harmless.</p></li>
+      <li><b>Authorise</b><p>Referenced tables are resolved against the catalog and checked against the user's role. A denied table or a restricted column stops the query before it runs.</p></li>
+      <li><b>Apply row-level security</b><p>Any row filter for the role is injected as a filtered sub-select, so <code>FROM hr</code> silently becomes <code>FROM (SELECT * FROM hr WHERE department = 'Sales')</code>.</p></li>
+      <li><b>Generate native SQL</b><p>Each dialect gets its own syntax — <code>DATE_TRUNC</code> on Postgres, <code>DATEFROMPARTS</code> on SQL Server, <code>DATE_FORMAT</code> on MySQL, <code>FETCH FIRST</code> on Oracle, <code>TOP n</code> instead of <code>LIMIT</code>.</p></li>
+      <li><b>Execute with limits</b><p>Row cap and statement timeout enforced per dialect. Aggregation happens in the database; only summarised rows travel.</p></li>
+      <li><b>Mask and log</b><p>PII columns are masked for non-admins, then the query is written to the log with a reference like <code>Q-3F9A1C22</code> — the handle every citation in every answer points back to.</p></li>
+    </ol>
+
+    <!-- ───────────────────────────────────────────── investigation -->
+    <h2 id="investigation">6 · Investigation engine</h2>
+    <p>
+      This is the heart of the system, and it contains no AI at all. It is deterministic: the same question
+      over the same data produces the same evidence every time. An LLM is used afterwards to <em>write</em>,
+      not to compute.
+    </p>
+
+    <ol class="steps">
+      <li><b>Validate the headline</b><p>Compute the metric for both periods and the twelve-month trend.</p></li>
+      <li><b>Decompose by every dimension</b><p>Region, product, channel, customer, salesperson… each segment gets its own change and its contribution to the total movement.</p></li>
+      <li><b>Find the real drivers</b><p>A big segment moving with the market is not a driver. The engine keeps only segments whose change is <em>disproportionate</em> — far from the overall change — and ranks them by contribution × excess.</p></li>
+      <li><b>Walk the graph</b><p>Up to three hops out, collecting every governed metric on every reachable table — finance, HR, inventory, support, operations, marketing.</p></li>
+      <li><b>Re-cut related metrics by the drivers</b><p>Each related metric is recomputed for the driver segments <em>and their intersection</em>. This is what turns “deliveries got worse” into “deliveries for Product C in the West went from 5% late to 71% late”.</p></li>
+      <li><b>Check timing</b><p>A metric that moved sharply in the <em>previous</em> month is flagged as a possible lagged cause — seven people leaving in July shows up in August's revenue, not July's.</p></li>
+      <li><b>Correlate and caveat</b><p>Monthly series are correlated, always labelled as correlation. Open data-quality issues and the freshness of every source touched are attached to the result.</p></li>
+    </ol>
+
+    <p>
+      Independent analyses run concurrently, each on its own database session, so an investigation
+      spanning five systems and roughly sixty queries finishes in about three seconds. Every figure it
+      produces carries the query reference that produced it.
+    </p>
+
+    <!-- ───────────────────────────────────────────── ai -->
+    <h2 id="ai">7 · AI reasoning layer</h2>
+
+    <h3>Planning first, not prompting first</h3>
+    <p>A question is parsed before any model sees it: intent, metric, period, comparison, dimensions, domains.</p>
+<pre><code>"Why did revenue decline in August?"
+  intent      diagnostic
+  metric      revenue            (matched via catalog + glossary synonyms)
+  period      August 2026        comparison  July 2026
+  domains     finance, sales</code></pre>
+    <p>
+      If no period is given but the question implies a direction — “why did revenue <em>drop</em>?” — the
+      planner scans recent months and anchors on the most recent real decline, then says so in the plan.
+      Follow-ups inherit context: <em>“was it because of attrition?”</em> keeps revenue as the subject and
+      treats attrition as the hypothesis to test, rather than switching topic.
+    </p>
+
+    <h3>Provider-agnostic</h3>
+    <p>
+      Two wire protocols cover every vendor: the OpenAI-compatible chat API (OpenAI, Azure, Gemini,
+      Ollama, OpenRouter, vLLM, LM Studio, anything compatible) and the Anthropic Messages API. Different
+      models can serve different jobs — a cheap one for metadata descriptions, a strong one for reasoning,
+      a separate one for embeddings. Tokens, latency and cost are tracked per request.
+    </p>
+
+    <h3>Tools, not table dumps</h3>
+    <p>
+      The model never receives raw tables. It receives the plan and a compact summary of the investigation,
+      and can call permission-checked tools for anything else: <code>search_metadata</code>,
+      <code>find_relevant_datasets</code>, <code>get_schema</code>, <code>get_column_profile</code>,
+      <code>get_relationships</code>, <code>get_entity_mapping</code>, <code>calculate_metric</code>,
+      <code>compare_periods</code>, <code>detect_anomalies</code>, <code>get_data_quality</code>,
+      <code>execute_sql</code>, <code>execute_python_analysis</code>, <code>generate_chart</code>.
+      Repeated calls are de-duplicated and the loop is capped, so a weaker model cannot spin.
+    </p>
+
+    <h3>Guardrails on the output</h3>
+    <div class="grid">
+      <div class="tile"><b>Citations are verified</b><p>Every <code>Q-</code> reference in the narrative is checked against queries that actually ran. Invented ones are struck through and marked unverified, a warning is attached, and confidence drops.</p></div>
+      <div class="tile"><b>Claims are classified</b><p>Observed fact, calculated metric, correlation, potential explanation — each with strong / medium / weak strength.</p></div>
+      <div class="tile"><b>Confidence is computed</b><p>From evidence strength, open quality issues, stale sources and analysis warnings — not from the model's self-assessment.</p></div>
+      <div class="tile"><b>Sandboxed analysis</b><p>Python for statistics runs in a subprocess with an import whitelist, no file access, no environment, a timeout and a result cap.</p></div>
+    </div>
+
+    <!-- ───────────────────────────────────────────── walkthrough -->
+    <h2 id="walkthrough">Worked example — “Why did revenue decline in August?”</h2>
+    <p>
+      The bundled dataset has a scenario deliberately planted across six systems, with no single table
+      containing the explanation. Here is what the platform actually returns.
+    </p>
+
+    <div class="card">
+      <h3>The headline</h3>
+      <p class="kv">Revenue &nbsp;₹15.68 Cr <span style="color:var(--muted)">(July)</span> → ₹13.37 Cr <span style="color:var(--muted)">(August)</span> &nbsp; <span class="neg">−14.7%</span></p>
+      <p style="margin-bottom:0">Confirmed independently by Finance's posted-invoice revenue: <span class="neg">−12.3%</span> — a small, explainable gap, shown rather than hidden.</p>
+    </div>
+
+    <h3>Decomposition finds two disproportionate drivers</h3>
+    <table>
+      <thead><tr><th>Dimension</th><th>Segment</th><th>Change</th><th>vs overall</th><th>Share of the drop</th></tr></thead>
+      <tbody>
+        <tr><td>region</td><td><strong>West</strong></td><td class="neg">−38.0%</td><td>−14.7%</td><td>66%</td></tr>
+        <tr><td>product</td><td><strong>Product C</strong></td><td class="neg">−19.9%</td><td>−14.7%</td><td>68%</td></tr>
+        <tr><td>region</td><td>North</td><td class="neg">−10.3%</td><td>−14.7%</td><td>17%</td></tr>
+        <tr><td>region</td><td>South</td><td class="neg">−1.7%</td><td>−14.7%</td><td>3%</td></tr>
+      </tbody>
+    </table>
+    <p>North and South moved <em>with</em> the total, so they are not drivers. West and Product C moved far beyond it, so the engine re-cuts every related metric by those two — and by their intersection.</p>
+
+    <h3>Following the graph into other domains</h3>
+    <table>
+      <thead><tr><th>Domain</th><th>Metric</th><th>Overall</th><th>In the West</th><th>West × Product C</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill b">sales</span></td><td>Orders</td><td class="neg">−13.5%</td><td class="neg">−34.6%</td><td class="neg">−62.7%</td></tr>
+        <tr><td><span class="pill w">inventory</span></td><td>Product availability</td><td class="neg">−1.8%</td><td>—</td><td class="neg">−36.5% <span style="color:var(--muted)">(94% → 60%)</span></td></tr>
+        <tr><td><span class="pill w">inventory</span></td><td>Stock units</td><td class="neg">−11.4%</td><td class="neg">−21.8%</td><td class="neg">−84.8%</td></tr>
+        <tr><td><span class="pill a">operations</span></td><td>Delivery delay rate</td><td class="pos">+111.7%</td><td class="pos">+504.8%</td><td class="pos">+1306% <span style="color:var(--muted)">(5% → 71% late)</span></td></tr>
+        <tr><td><span class="pill g">hr</span></td><td>Sales headcount</td><td class="neg">−8.6%</td><td class="neg">−33.3% <span style="color:var(--muted)">(24 → 16)</span></td><td>—</td></tr>
+        <tr><td><span class="pill r">support</span></td><td>Support tickets</td><td class="pos">+7.1%</td><td class="pos">+51.2%</td><td>—</td></tr>
+        <tr><td><span class="pill r">support</span></td><td>SLA breach rate</td><td class="pos">+26.7%</td><td class="pos">+47.0%</td><td>—</td></tr>
+        <tr><td><span class="pill b">marketing</span></td><td>Marketing spend</td><td>flat</td><td>flat</td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note good">
+      <strong>Note what it also finds: the non-causes.</strong> Marketing spend was flat, so it is reported
+      as having insufficient evidence rather than quietly dropped. Employee exits in August were
+      <em>zero</em> — but the engine flags that nine people left in <em>July</em>, and surfaces it as a
+      possible lagged effect rather than dismissing the HR angle.
+    </div>
+
+    <h3>The answer</h3>
+    <p>The narrative is organised as Executive Summary → Key Findings → Cross-Domain Evidence → Likely
+      Contributors (split into evidence-supported, potential, and insufficient evidence) → Recommended
+      Investigation → Confidence. Alongside it sit five tabs: every <strong>evidence</strong> item with its
+      kind and strength, generated <strong>charts</strong>, all <strong>SQL</strong> with results, the
+      <strong>sources</strong> used with their freshness and open quality issues, and the
+      <strong>plan and reasoning path</strong> including every tool call the model made.</p>
+    <p>Clicking any <code>Q-3F9A1C22</code> in the text opens the exact query, the source it ran against, and the rows it returned.</p>
+
+    <h3>Follow-ups keep the thread</h3>
+    <p>Ask <em>“was it because of employee attrition?”</em> and the subject stays revenue; attrition becomes
+      the hypothesis under test, with the July timing made explicit. Ask <em>“which region?”</em> and it
+      decomposes the same metric over the same period. Ask <em>“compare with last year”</em> and only the
+      comparison period changes.</p>
+
+    <!-- ───────────────────────────────────────────── quality -->
+    <h2 id="quality">Data quality</h2>
+    <p>Quality checks run after every profile and feed directly into how much the AI trusts its own answer.</p>
+    <table>
+      <thead><tr><th>Rule</th><th>Catches</th></tr></thead>
+      <tbody>
+        <tr><td>Missing values</td><td>High null rates — with optional event columns like <code>exit_date</code> downgraded, because a null there means “still employed”, not “broken data”.</td></tr>
+        <tr><td>Duplicate keys / rows</td><td>Primary keys that are not unique; fully duplicated records.</td></tr>
+        <tr><td>Invalid values</td><td>Negative amounts, prices or quantities.</td></tr>
+        <tr><td>Outliers</td><td>IQR-based, on columns where it is meaningful.</td></tr>
+        <tr><td>Inconsistent categories</td><td><code>"West"</code> vs <code>"west "</code> vs <code>"WEST"</code>.</td></tr>
+        <tr><td>Volume change</td><td>Row count moving ±30% between ingestions — the classic silent truncation.</td></tr>
+        <tr><td>Schema drift</td><td>Columns or types that changed since the last sync.</td></tr>
+        <tr><td>Freshness</td><td>How old the newest record is, per source.</td></tr>
+      </tbody>
+    </table>
+    <p>Open issues on any table used in an analysis are surfaced inside that analysis and lower its confidence rating.</p>
+
+    <!-- ───────────────────────────────────────────── insights -->
+    <h2 id="insights">Proactive insights</h2>
+    <p>
+      The system does not wait to be asked. The insight engine sweeps every governed metric's monthly
+      series for month-over-month shocks and z-score anomalies, then runs a shallow investigation on each
+      one so the finding arrives with its context already attached:
+    </p>
+<pre><code>Revenue declined 14.7% in August 2026                              [warning]
+
+  1. By region: 'West' moved −38.0% vs −14.7% overall  (66% of the change)   strong
+  2. By product: 'Product C' moved −19.9% vs −14.7% overall (68%)            strong
+  3. Delivery delay rate rose 111.7%; West × Product C 5% → 71% late         strong
+  4. Sales headcount fell 33.3% in the West (24 → 16)                        strong
+
+  5 related metrics checked across Finance, HR, Inventory, Sales, Support.
+  [ Investigate with AI ]</code></pre>
+    <p>The dashboard ranks them by severity and magnitude, and “Investigate” hands the question to the assistant pre-filled.</p>
+
+    <!-- ───────────────────────────────────────────── security -->
+    <h2 id="security">Security</h2>
+    <div class="grid">
+      <div class="tile"><b>Authentication</b><p>JWT sessions, bcrypt password hashing.</p></div>
+      <div class="tile"><b>Roles</b><p>admin / analyst / viewer, enforced on every endpoint.</p></div>
+      <div class="tile"><b>Object permissions</b><p>Allow or deny per dataset, table or column. One allow rule flips that role to default-deny.</p></div>
+      <div class="tile"><b>Row-level security</b><p>SQL predicates injected into every query on a table for that role.</p></div>
+      <div class="tile"><b>PII masking</b><p>Applied to results for non-admins based on the detected sensitivity.</p></div>
+      <div class="tile"><b>Read-only by default</b><p>Writes and DDL are rejected before reaching any source.</p></div>
+      <div class="tile"><b>Encrypted secrets</b><p>Connection credentials and API keys encrypted at rest, masked in responses.</p></div>
+      <div class="tile"><b>Full audit trail</b><p>Logins, edits, permission changes, questions and executed queries — all searchable.</p></div>
+    </div>
+    <div class="note">
+      <strong>The assistant inherits your permissions.</strong> It is not a privileged service account. If
+      you cannot see salaries, neither can the AI answering your question — it will say the data is
+      restricted rather than working around you.
+    </div>
+
+    <!-- ───────────────────────────────────────────── screens -->
+    <h2 id="screens">The screens</h2>
+    <table>
+      <thead><tr><th>Screen</th><th>What you do there</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Dashboard</strong></td><td>Ecosystem health, source status, and the top proactive insights.</td></tr>
+        <tr><td><strong>Data Sources</strong></td><td>Add, test, sync, configure refresh, upload files, view health and sync history.</td></tr>
+        <tr><td><strong>Datasets</strong></td><td>Browse source → table → column. Profiles, sample data, relationships, quality, per-table metrics.</td></tr>
+        <tr><td><strong>Semantic Layer</strong></td><td>Canonical entities and their mappings, catalog search, full version history with diffs.</td></tr>
+        <tr><td><strong>Business Glossary</strong></td><td>Terms, definitions, synonyms, owners and business rules.</td></tr>
+        <tr><td><strong>Metrics</strong></td><td>Define and preview governed formulas; every change versioned.</td></tr>
+        <tr><td><strong>Relationships</strong></td><td>Interactive force-directed graph; review, approve or reject suggested joins.</td></tr>
+        <tr><td><strong>Data Quality</strong></td><td>Issues by severity; acknowledge or resolve.</td></tr>
+        <tr><td><strong>AI Assistant</strong></td><td>Ask questions. Live plan and tool calls, streamed answer, evidence / charts / SQL / sources / reasoning tabs.</td></tr>
+        <tr><td><strong>Insights</strong></td><td>Detected anomalies with pre-computed contributing factors.</td></tr>
+        <tr><td><strong>Query History</strong></td><td>Every query with status, timing and results.</td></tr>
+        <tr><td><strong>Audit Logs</strong></td><td>Who did what, when. <span class="pill">admin</span></td></tr>
+        <tr><td><strong>Administration</strong></td><td>AI providers, usage and cost, users, permissions, monitoring. <span class="pill">admin</span></td></tr>
+      </tbody>
+    </table>
+
+    <!-- ───────────────────────────────────────────── layout -->
+    <h2 id="layout">Project layout</h2>
+<pre><code>start.bat                  one-click launcher (setup on first run, then start)
+docker-compose.yml         postgres · redis · backend · worker · frontend
+.env.example               every setting, documented
+
+backend/
+  connectors/              plugin registry — one file per source type
+  metadata/                catalog models, profiler, PII detection, sync
+  semantic/                relationship discovery, entity resolution, versioning
+  knowledge_graph/         graph build + multi-hop traversal
+  vector_store/            hybrid BM25 + embedding search
+  query_engine/            SQL safety, dialects, permission-aware executor, metrics
+  analytics/               investigation engine, insight engine
+  ai/                      providers, planner, tools, orchestrator, sandbox
+  data_quality/            quality rules
+  security/ audit/         auth, access control, audit log
+  workers/                 background jobs and scheduler
+  api/routers/             REST + SSE endpoints
+
+frontend/src/
+  app/(app)/               one folder per screen
+  components/              UI kit, charts, answer renderer
+  lib/                     API client, SSE streaming, auth
+
+scripts/                   demo data generator, demo seeder
+tests/                     unit · integration · AI benchmark
+docs/                      architecture.md · guide.md · this file
+migrations/                Alembic schema history</code></pre>
+
+    <!-- ───────────────────────────────────────────── extend -->
+    <h2 id="extend">Extending it</h2>
+    <table>
+      <thead><tr><th>To add…</th><th>Do this</th></tr></thead>
+      <tbody>
+        <tr><td>A data source type</td><td>Subclass <code>DataConnector</code> (live SQL) or <code>MaterializedConnector</code> (produces frames), set <code>type_key</code> / <code>config_fields</code>, decorate with <code>@register</code>. The UI form builds itself from the field list.</td></tr>
+        <tr><td>A metric</td><td>Metrics → Define metric. Available to the AI immediately, versioned automatically.</td></tr>
+        <tr><td>A business rule</td><td>A glossary rule, or a metric filter such as <code>invoice_status = 'POSTED'</code>.</td></tr>
+        <tr><td>An AI tool</td><td>Add a spec to <code>TOOL_SPECS</code> and a matching <code>t_&lt;name&gt;</code> method on <code>ToolBox</code>.</td></tr>
+        <tr><td>A quality rule</td><td>Extend <code>run_quality_checks</code>.</td></tr>
+        <tr><td>A SQL dialect</td><td>Add an entry to <code>dialects.py</code> — month truncation, date ranges, row limiting, prompt hints.</td></tr>
+      </tbody>
+    </table>
+    <p>The reasoning engine never needs to change for any of these. That is the point of the layering.</p>
+
+    <!-- ───────────────────────────────────────────── trouble -->
+    <h2 id="trouble">Troubleshooting</h2>
+    <table>
+      <thead><tr><th>Symptom</th><th>Cause and fix</th></tr></thead>
+      <tbody>
+        <tr><td>Assistant answers without a narrative</td><td>No AI provider configured, or its test fails. Check <em>Administration → AI Providers</em>. The deterministic analysis shown is still fully valid.</td></tr>
+        <tr><td>A local model is slow or rambles</td><td>Use a tool-capable model and raise <code>num_ctx</code> in the provider's extra settings. Small models handle the investigation summary poorly.</td></tr>
+        <tr><td>Port already in use</td><td><code>start.bat</code> picks the next free port automatically and rewires the frontend. If all of 8000–8040 are busy, free one.</td></tr>
+        <tr><td>A source shows <span class="pill r">error</span></td><td>Open it and press <em>Test connection</em> — the message appears there and in Administration → Monitoring.</td></tr>
+        <tr><td>Investigation finds no related metrics</td><td>Approve relationships, add entity mappings, and make sure the related tables have metrics with a date column.</td></tr>
+        <tr><td>A Power BI measure shows <span class="pill w">definition only</span></td><td>Its DAX has no exact SQL equivalent. The formula is preserved — define an equivalent governed metric if you need the number.</td></tr>
+        <tr><td>Tableau returns no rows</td><td>VizQL Data Service needs Tableau 2024.2+. Enable <em>Metadata only</em> to import just the semantic model.</td></tr>
+        <tr><td><code>database is locked</code></td><td>SQLite under concurrent writes. Switch to PostgreSQL via <code>docker compose up</code> for multi-user use.</td></tr>
+        <tr><td>Setup fails on first run</td><td>Check Python 3.11+ and Node 20+ are on PATH. Delete <code>.venv</code> and re-run to retry cleanly.</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+    <p style="font-size:14px;color:var(--muted)">
+      Deeper reading: <code>docs/architecture.md</code> for internals,
+      <code>docs/guide.md</code> for the full operator guide, and the live API reference at
+      <code>/api/docs</code> once the backend is running.
+    </p>
+
+    <footer>
+      Enterprise Data Intelligence — unified semantic layer, cross-domain AI reasoning, evidence-backed answers.
+    </footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // theme toggle, remembered per browser
+  var btn = document.getElementById('themeBtn'), root = document.documentElement;
+  function sysDark(){ try { return matchMedia('(prefers-color-scheme: dark)').matches; } catch(e){ return false; } }
+  function current(){ return root.getAttribute('data-theme') || (sysDark() ? 'dark' : 'light'); }
+  function paint(){ btn.textContent = current() === 'dark' ? 'Light' : 'Dark'; }
+  try { var saved = localStorage.getItem('edi-docs-theme'); if (saved) root.setAttribute('data-theme', saved); } catch(e){}
+  paint();
+  btn.addEventListener('click', function(){
+    var next = current() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('edi-docs-theme', next); } catch(e){}
+    paint();
+  });
+
+  // highlight the section currently in view
+  var links = [].slice.call(document.querySelectorAll('#toc a'));
+  var byId = {};
+  links.forEach(function(a){ byId[a.getAttribute('href').slice(1)] = a; });
+  var heads = links.map(function(a){ return document.getElementById(a.getAttribute('href').slice(1)); }).filter(Boolean);
+  function spy(){
+    var best = null;
+    heads.forEach(function(h){
+      if (h.getBoundingClientRect().top <= 110) best = h;
+    });
+    links.forEach(function(a){ a.classList.remove('active'); });
+    if (best && byId[best.id]) byId[best.id].classList.add('active');
+  }
+  addEventListener('scroll', spy, {passive:true});
+  spy();
+})();
+</script>
+</body>
+</html>
