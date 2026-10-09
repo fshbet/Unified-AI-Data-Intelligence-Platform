@@ -13,8 +13,16 @@ python scripts/seed_demo.py --reset
 cd frontend && npm install && npm run dev
 ```
 
-The backend creates tables on start (`Base.metadata.create_all`) and a default admin. For production use
-`alembic upgrade head` (see `alembic.ini`, `migrations/`).
+The backend creates tables on start (`Base.metadata.create_all`) and an admin account. On a first run the
+admin password is **generated and printed once** to the log; set `EDI_DEFAULT_ADMIN_PASSWORD` beforehand to
+choose your own.
+
+For production run `alembic upgrade head` (see `alembic.ini`, `migrations/`). **Migrate before starting the
+new code**: `create_all` adds missing tables but cannot alter existing ones, so starting first leaves the
+catalog mid-upgrade and every scheduled sync fails until the migration runs. The migrations tolerate that
+ordering, but it is still the wrong way round.
+
+Upgrading an existing install also needs a one-off secret migration — see [security.md](security.md).
 
 ## Configuration
 
@@ -28,6 +36,10 @@ All settings are environment variables prefixed `EDI_` (see `.env.example`, `bac
 | `EDI_QUERY_TIMEOUT_SECONDS`, `EDI_MAX_RESULT_ROWS`, `EDI_PROFILE_SAMPLE_ROWS` | Query safety and profiling limits |
 | `EDI_AI_MAX_TOOL_ITERATIONS`, `EDI_AI_REQUEST_TIMEOUT_SECONDS` | LLM loop limits |
 | `EDI_SCHEDULER_ENABLED`, `EDI_SCHEDULER_TICK_SECONDS` | Scheduled refresh |
+| `EDI_ENVIRONMENT` | `development` or `production`. In production the app **refuses to start** on a default secret key, a default admin password or a localhost CORS origin. |
+| `EDI_DEFAULT_ADMIN_PASSWORD` | Blank generates one on first run and prints it once to the log |
+| `EDI_PYTHON_ANALYSIS_ENABLED` | Off by default. Runs model-authored Python — see [security.md](security.md) |
+| `EDI_QUERY_PREVIEW_RETENTION_DAYS`, `EDI_ANON_VAULT_RETENTION_HOURS`, `EDI_AUDIT_RETENTION_DAYS` | Data retention sweeps |
 | `NEXT_PUBLIC_API_URL` | Frontend → API base URL |
 
 ## Data sources
@@ -45,6 +57,15 @@ description, refresh frequency, read-only flag, enable/disable, health and last-
 * **MongoDB** — collections flattened (nested keys → `parent_child` columns).
 * **REST / GraphQL** — URL, method, auth (bearer/basic/API-key header), headers, params, response path,
   pagination (page/offset/cursor); the response schema is detected automatically.
+* **Google Sheets** — spreadsheet ID; one table per tab. Blank header cells are *named* rather than
+  dropped (dropping one shifts every later column left), duplicates get a suffix, and a column is only
+  typed when every value parses — one stray `n/a` keeps it text.
+* **Google BigQuery** — project and dataset. Every query is capped by `maximumBytesBilled` (default 1 GB)
+  and routed through the same read-only validator as any other SQL.
+* **Excel on OneDrive / SharePoint** — workbook path plus optional drive or site ID, read through
+  Microsoft Graph with the same header handling as Sheets.
+* **SharePoint lists** — site ID; internal field names (`OData__x0020_Cost`) are mapped back to their
+  display names, and `@odata.nextLink` is followed verbatim so paging works.
 * **Power BI semantic model** — dataset (semantic model) ID plus an Entra ID service principal or a
   pasted access token. Uses the REST API only, so no gateway or .NET runtime is needed. Reads the model
   through `INFO.VIEW.*` DAX functions and pulls each table's rows with `EVALUATE TOPN(...)`.
@@ -53,6 +74,66 @@ description, refresh frequency, read-only flag, enable/disable, health and last-
   Data Service supplies the rows. For a local server with a self-signed certificate, turn off
   *Verify TLS certificate*; on servers older than 2024.2 enable *Metadata only* to import the model
   without row data.
+
+## Authentication for a source
+
+A source's credentials are a separate choice from its type. Pick a **connector**, then an **authentication
+mode**; the form shows only what that mode needs. Every connector declares which modes it accepts and
+implements none of them, so the same mode works the same way everywhere.
+
+| Mode | What you supply | Use it for |
+|---|---|---|
+| **Stored credentials** | username/password, a DSN, or an API key | databases and plain REST APIs — the common case |
+| **Service account** | Google service-account JSON, or an Entra tenant/client/secret | unattended scheduled syncs |
+| **Sign in with a browser** | one click; the connection then acts as *you* | "connect my Google account", Microsoft delegated access |
+| **Device code** | a short code typed on your phone | a headless server with no browser |
+| **Ambient / managed identity** | nothing | running on GCP or Azure — no secret is stored at all |
+
+Things worth knowing before you start:
+
+* **A Google service account is a separate identity.** Sharing the spreadsheet or dataset with its
+  `…@…iam.gserviceaccount.com` address is a required step. If it is missed the connection authenticates
+  fine and then reports "not found" — the error names the address to share with.
+* **Microsoft application vs delegated permissions.** A service principal uses *application* permissions
+  and needs admin consent; browser sign-in uses *delegated* permissions and sees only what you can see. A
+  connection that works signed-in and 403s unattended is almost always missing admin consent, and the
+  error says so.
+* Browser and device-code flows need re-authorising if the refresh token is revoked. The source is marked
+  **needs auth** and the UI offers a reconnect button rather than failing silently.
+* Credentials are encrypted at rest, masked in every API response, and refreshed transparently — ten
+  parallel table syncs cause one token refresh, not ten.
+
+## AI privacy
+
+**AI Privacy** in the sidebar controls what the model is allowed to see. This is separate from
+*Administration → Permissions*, which controls what **people** see: someone entitled to view every row
+can still have the model receive only tokens.
+
+Each column has a treatment:
+
+| Strategy | Reversible | The model receives | Use for |
+|---|---|---|---|
+| `passthrough` | n/a | the real value | anything not sensitive — **including numbers you want analysed** |
+| `pseudonym` | **yes** | `[[PER_0001]]` | names, emails, IDs — anything the answer may refer back to |
+| `redact` | no | `[[REDACTED]]` | card numbers, national IDs — no analytical use |
+| `mask` | no | `jo****` | when a prefix is genuinely useful |
+| `hash` | no | a stable fingerprint | join keys that must match but never be read |
+| `generalize` | no | `90000-100000` | salary bands — keeps the magnitude |
+| `shift` | no | a date moved by a constant | dates where the **interval** matters |
+
+Defaults come from the PII classifier that already runs during profiling, so email, phone, name, address,
+Aadhaar, PAN, national ID and salary columns are protected from the first sync. They are shown as
+*auto · unconfirmed* until you confirm them — **Confirm N detected** accepts them in bulk.
+
+The **What the AI receives** column is a live preview produced by the same code path as a real request, so
+it cannot drift from reality. Sample values are masked on this page too: a privacy screen should not
+display the data it protects.
+
+Every answer carries a badge showing how many values were withheld. If the model references a token that
+was never in the data, the answer is flagged as unverified rather than printing a dangling token.
+
+`docs/security.md` documents the limits, including that values under three characters are not covered by
+the outbound guard and that webhooks send real data by design.
 
 ## Datasets & tables
 
@@ -161,8 +242,19 @@ z-score anomalies, pre-investigates each across connected domains and surfaces c
 * Credentials and API keys are encrypted at rest (Fernet). Secrets are masked in API responses.
 * Row-level filters are injected as filtered sub-selects; PII columns are masked in results for non-admins.
 * All logins, edits, permission changes, questions and query executions are written to the audit log.
-* The Python sandbox runs in a subprocess with an import whitelist, no `open`/`exec`, no environment,
-  a wall-clock timeout and a result-size cap.
+* **Values from protected columns never reach an AI provider** — see *AI privacy* above. An egress guard
+  checks the serialised request body immediately before the HTTP call and aborts if an original survives.
+* Stored result rows, the de-anonymisation vault and expired auth handshakes are purged on a timer
+  (`EDI_QUERY_PREVIEW_RETENTION_DAYS`, `EDI_ANON_VAULT_RETENTION_HOURS`, `EDI_AUDIT_RETENTION_DAYS`).
+* **Python analysis is disabled by default** (`EDI_PYTHON_ANALYSIS_ENABLED=false`). It executes
+  model-authored code, and the subprocess guard — import allow-list, stripped builtins, timeout — is a
+  speed bump rather than a sandbox: attribute traversal reaches `subprocess.Popen`. Enable it only inside
+  an isolated container. While disabled the tool is not offered to the model at all.
+* With `EDI_ENVIRONMENT=production` the app refuses to start on a default secret key, a default admin
+  password, or a localhost CORS origin.
+
+**[security.md](security.md) is the authoritative document** — it states the limits of the privacy
+boundary as plainly as its protections, and carries the pre-deployment checklist.
 
 ## Adding things
 
@@ -187,11 +279,52 @@ z-score anomalies, pre-investigates each across connected domains and surfaces c
 | Source shows `error` | Open the source → Test connection; error text is shown in Health and Monitoring |
 | Investigation shows no related metrics | Approve relationships / add entity mappings; define metrics on the related tables with a date column |
 | Windows console `UnicodeEncodeError` in scripts | `set PYTHONIOENCODING=utf-8` |
+| Google source authenticates then says "not found" | The sheet or dataset is not shared with the service account; the error names the address to share with |
+| Microsoft source works signed-in but 403s unattended | The app registration has no admin consent for its *application* permissions |
+| Source shows `needs auth` | A refresh token expired or was revoked — reconnect from the source page |
+| The assistant can no longer do arithmetic | A numeric column was set to `pseudonym` in AI Privacy; numbers should normally be `passthrough` |
+| A unified-API search returns `400 bad_search` | The term is allow-listed to letters, digits, spaces and `. @ / + - _` |
+| Fresh install, unknown admin password | It was generated and printed once in the backend log; set `EDI_DEFAULT_ADMIN_PASSWORD` to pick your own |
 | Port 8000 already in use (another app / Docker container) | Run uvicorn on another port (e.g. `--port 8010`) and set `NEXT_PUBLIC_API_URL=http://localhost:8010/api` in `frontend/.env.local` |
+
+## Unified API — attaching another application
+
+`/api/v1/unified/*` is the contract an external application attaches to. It returns everything the key can
+reach, in one shape, regardless of how many systems are behind it.
+
+```
+GET  /api/v1/unified/schema     entities, tables, columns
+GET  /api/v1/unified/records    the data (filters: entity, source, table, search; format=json|ndjson)
+POST /api/v1/unified/ask        a natural-language question, anonymised end to end
+```
+
+Every response — success or failure — has the same keys: `ok`, `request_id`, `data`, `page`, `sources`,
+`warnings`. `sources` always reports each contributing system and when it last synced, so a consumer can
+see that one of five is days stale. `warnings` reports a source that failed rather than silently returning
+fewer rows.
+
+**Keys** are created in Administration, shown **once**, and stored only as a hash. Scope one to specific
+entities or sources and the limit is applied inside the query, so it cannot infer counts for data it
+cannot read. Revocation takes effect on the next request.
+
+```python
+from edi_client import EDI          # client/edi_client.py — copy it anywhere, needs only httpx
+
+edi = EDI("http://localhost:8000", api_key="edi_live_...")
+for r in edi.records(entity="customer", limit=500):   # cursors handled for you
+    print(r.fields, r.source.name, r.lineage["query_ref"])
+
+a = edi.ask("which customers churned after the price change?")
+print(a.text, a.anonymization)      # how many values were withheld from the model
+```
+
+Use `format=ndjson` for large exports — it streams, so neither side buffers the whole result.
 
 ## API
 
-OpenAPI at `http://localhost:8000/api/docs`. Main groups: `/api/auth`, `/api/sources`, `/api/catalog`,
-`/api/semantic` (metrics, glossary, entities, relationships, graph, versions, search), `/api/assistant`
-(ask = SSE, conversations, sql, insights), `/api/admin` (ai providers, usage, users, permissions, audit,
-queries, jobs, quality, dashboard, monitoring).
+OpenAPI at `http://localhost:8000/api/docs`. Main groups: `/api/auth`, `/api/sources` (CRUD, test, sync,
+`auth/start`, `auth/callback`, `auth/poll`), `/api/catalog`, `/api/semantic` (metrics, glossary, entities,
+relationships, graph, versions, search), `/api/assistant` (ask = SSE, conversations, sql, insights),
+`/api/privacy` (column policies, summary, vault purge), `/api/v1/unified` (schema, records, ask, keys) and
+`/api/admin` (ai providers, usage, users, permissions, audit, queries, jobs, quality, dashboard,
+monitoring).
