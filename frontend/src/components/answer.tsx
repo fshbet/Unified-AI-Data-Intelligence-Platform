@@ -6,7 +6,7 @@ import { Chart, type ChartSpec } from "./chart";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useMemo, useState, type ReactNode } from "react";
-import { Copy, Download } from "lucide-react";
+import { Copy, Download, Lock } from "lucide-react";
 
 export type Evidence = { id: string; statement: string; kind: string; domain?: string | null; source: string; table: string; query_refs: string[]; strength: string };
 export type QueryRec = { ref: string; sql: string; source: string; tables?: string[]; columns?: string[]; rows?: unknown[][]; row_count?: number; error?: string | null; duration_ms?: number };
@@ -24,6 +24,7 @@ export type Payload = {
   tool_calls: { tool: string; args: Record<string, unknown>; ok: boolean }[];
   warnings: string[];
   follow_ups: string[];
+  anonymization?: { job_id: string; columns_protected: number; policies_active: number; tokens_issued: number } | null;
 };
 
 const QREF = /\[?(Q-[0-9A-F]{6,8}(?:⚠unverified)?(?:\s*,\s*Q-[0-9A-F]{6,8}(?:⚠unverified)?)*)\]?/g;
@@ -121,6 +122,14 @@ export function AnswerDetails({ payload, onRef, content }: { payload: Payload; o
         <Tabs tabs={tabs} value={tab} onChange={setTab} />
         <div className="flex items-center gap-2 pb-1">
           <Badge tone={statusTone(payload.confidence.level)}>confidence: {payload.confidence.level}</Badge>
+          {payload.anonymization && payload.anonymization.tokens_issued > 0 && (
+            <span title={`${payload.anonymization.policies_active} column policies active. ${payload.anonymization.tokens_issued} value(s) were replaced with tokens before the request left this machine, and restored in the answer above.`}>
+              <Badge tone="success">
+                <Lock className="mr-1 inline h-3 w-3" />
+                {payload.anonymization.tokens_issued} value{payload.anonymization.tokens_issued === 1 ? "" : "s"} hidden from the AI
+              </Badge>
+            </span>
+          )}
           <Button size="sm" variant="ghost" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => navigator.clipboard.writeText(content)}>Copy</Button>
           <Button size="sm" variant="ghost" icon={<Download className="h-3.5 w-3.5" />} onClick={exportMd}>Export</Button>
         </div>

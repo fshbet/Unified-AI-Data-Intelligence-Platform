@@ -29,6 +29,7 @@ def extract_path(data: Any, path: str | None) -> Any:
 
 @register
 class RestAPIConnector(MaterializedConnector):
+    supported_auth = ("credentials", "oauth_code", "service_account", "ambient")
     type_key = "rest_api"
     display_name = "REST API"
     category = "api"

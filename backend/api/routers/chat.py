@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from backend.ai import orchestrator
+from backend.anonymize import LeakError
 from backend.api.schemas import AskIn, SQLIn
 from backend.audit.service import audit
 from backend.core.db import SessionLocal, get_db
@@ -94,9 +95,18 @@ def ask(body: AskIn, user: User = Depends(get_current_user)):
                 q.put({"type": "conversation", "conversation_id": conv.id})
                 for ev in orchestrator.run(db, u, conv, body.question):
                     q.put(ev)
-            except Exception as e:  # noqa: BLE001
+            except LeakError:
+                # LeakError's message deliberately NAMES the values that leaked so an operator
+                # can act on it. Streaming str(e) to the browser would publish exactly the PII
+                # this layer exists to withhold. The detail goes to the log and nowhere else.
+                log.critical("egress guard blocked an assistant request", exc_info=True)
+                q.put({"type": "error", "message":
+                       "Blocked: unanonymised data was about to be sent to the AI provider. "
+                       "Nothing was transmitted. See the server log."})
+            except Exception:  # noqa: BLE001
                 log.exception("ask failed")
-                q.put({"type": "error", "message": str(e)})
+                # Exception text from SQLAlchemy/drivers embeds SQL and row values.
+                q.put({"type": "error", "message": "The request failed. See the server log."})
             finally:
                 q.put(None)
 

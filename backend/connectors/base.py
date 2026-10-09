@@ -68,6 +68,9 @@ class DataConnector(ABC):
     dialect: ClassVar[str] = "generic"  # SQL dialect used by query planner
     config_fields: ClassVar[list[ConfigField]] = []
     supports_sql: ClassVar[bool] = True
+    # Which AuthProvider modes this connector accepts, in preference order. The UI offers
+    # exactly these and the connector implements none of them.
+    supported_auth: ClassVar[tuple[str, ...]] = ("credentials",)
 
     def __init__(self, source_id: str, config: dict[str, Any]):
         self.source_id = source_id

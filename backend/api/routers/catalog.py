@@ -96,7 +96,7 @@ def table_sample(table_id: str, n: int = 50, db: Session = Depends(get_db), user
     t = db.get(Table, table_id) or _404("Table")
     if not ctx.can_see_table(t.id):
         raise HTTPException(403, "Access denied")
-    conn = connector_for(t.dataset.source)
+    conn = connector_for(t.dataset.source, db)
     try:
         r = conn.sample_data(t.table_name, t.schema_name, n=min(n, 200))
     finally:

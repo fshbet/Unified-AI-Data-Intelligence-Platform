@@ -18,6 +18,7 @@ from backend.metadata.models import Column, DataSource, Dataset, Entity, Glossar
 from backend.query_engine import metrics as M
 from backend.query_engine.executor import execute
 from backend.query_engine.periods import Period, comparison_for, default_period, resolve_period, shift
+from backend.core.config import settings
 from backend.security.access import AccessContext
 from backend.vector_store.store import CatalogVectorStore
 
@@ -51,8 +52,14 @@ TOOL_SPECS: dict[str, dict] = {
 }
 
 
+# Tools that are only offered when their feature is switched on. Advertising a tool that
+# always fails wastes model turns and invites it to keep retrying.
+GATED_TOOLS = {"execute_python_analysis": lambda: settings.python_analysis_enabled}
+
+
 def tool_definitions(names: list[str] | None = None) -> list[dict]:
-    return [{"name": n, **s} for n, s in TOOL_SPECS.items() if not names or n in names]
+    return [{"name": n, **s} for n, s in TOOL_SPECS.items()
+            if (not names or n in names) and GATED_TOOLS.get(n, lambda: True)()]
 
 
 class ToolBox:
@@ -65,6 +72,12 @@ class ToolBox:
         self.sources_used: set[str] = set()
         self.calls: list[dict] = []
         self._results: dict[str, dict] = {}
+        # Set by the orchestrator. Every tool result is anonymised on its way out of call(),
+        # so no individual tool is responsible for remembering to do it. `self.queries` keeps
+        # the REAL rows: those are the evidence shown to the user, who is authorised to see
+        # them — only what crosses to the model is tokenised.
+        self.anonymizer: Any = None
+        self.columns_protected = 0
 
     # ------------------------------------------------------------------ dispatch
     def call(self, name: str, args: dict[str, Any]) -> str:
@@ -79,7 +92,22 @@ class ToolBox:
             log.exception("tool %s failed", name)
             out = {"error": f"{type(e).__name__}: {e}"}
         self.calls.append({"tool": name, "args": args, "ok": not (isinstance(out, dict) and out.get("error"))})
-        return json.dumps(out, default=str)[:12000]
+        return json.dumps(self._for_model(out), default=str)[:12000]
+
+    def _for_model(self, out: Any) -> Any:
+        """The privacy boundary for tool output. Rows come back as columns+rows, everything
+        else is a nested payload (schema samples, profiles, chart labels)."""
+        if self.anonymizer is None or not isinstance(out, dict):
+            return out
+        if isinstance(out.get("rows"), list) and isinstance(out.get("columns"), list):
+            table = out.get("table") or next(iter(self.tables_used), None)
+            rows, protected = self.anonymizer.anonymize_result(out["columns"], out["rows"], table)
+            self.columns_protected = max(self.columns_protected, protected)
+            out = {**out, "rows": rows}
+            if protected:
+                out["_privacy"] = f"{protected} column(s) anonymised; tokens like [[PER_0001]] are real distinct entities"
+            return self.anonymizer.anonymize_mapping(out, table)
+        return self.anonymizer.anonymize_mapping(out, out.get("table"))
 
     # ------------------------------------------------------------------ helpers
     def _visible_tables(self) -> list[Table]:

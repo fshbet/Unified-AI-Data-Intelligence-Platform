@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 import re
 import time
+from datetime import date, datetime
+from decimal import Decimal
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -43,6 +45,31 @@ class ExecutionRecord:
             "row_count": len(self.result.rows) if self.result else 0, "truncated": bool(self.result and self.result.truncated),
             "error": self.error, "duration_ms": self.duration_ms,
         }
+
+
+def _jsonable(value: Any) -> Any:
+    """Coerce a cell into something the JSON column can hold, preserving readability."""
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<{len(bytes(value))} bytes>"
+    item = getattr(value, "item", None)  # numpy / pandas scalars
+    if callable(item):
+        try:
+            return _jsonable(item())
+        except (ValueError, TypeError):
+            pass
+    isoformat = getattr(value, "isoformat", None)  # pandas Timestamp, Timedelta
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except (ValueError, TypeError):
+            pass
+    return str(value)
 
 
 def _next_ref(db: Session) -> str:
@@ -86,7 +113,7 @@ def execute(db: Session, ctx: AccessContext, source: DataSource, sql: str, purpo
             used.append(t)
         # row-level security: substitute filtered subqueries
         # ponytail: regex table substitution; swap for sqlglot AST rewrite if queries get exotic
-        conn = connector_for(source)
+        conn = connector_for(source, db)
         for t in used:
             pred = ctx.row_filters.get(t.id)
             if pred:
@@ -102,7 +129,10 @@ def execute(db: Session, ctx: AccessContext, source: DataSource, sql: str, purpo
         result.rows = rows
         dur = int((time.perf_counter() - t0) * 1000)
         log_row.row_count, log_row.duration_ms, log_row.sql = len(rows), dur, final
-        log_row.result_preview = [result.columns] + rows[:20]
+        # JSON-safe: pandas/DuckDB hand back Timestamp, Decimal, date and numpy scalars, none of
+        # which the JSON column can store. Any query selecting a date column used to fail here on
+        # flush, taking the whole request down with a PendingRollbackError.
+        log_row.result_preview = [result.columns] + [[_jsonable(v) for v in r] for r in rows[:20]]
         db.add(log_row)
         db.flush()
         return ExecutionRecord(ref, final, source.id, source.name, [t.qualified_name for t in used], result, None, dur)

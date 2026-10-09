@@ -112,7 +112,7 @@ def _import_bi_model(db, source) -> dict | None:
     from backend.metadata.catalog import connector_for
     from backend.semantic.bi_import import import_semantic_model
 
-    conn = connector_for(source)
+    conn = connector_for(source, db)
     if not isinstance(conn, BIConnector):
         return None
     try:
@@ -144,9 +144,24 @@ def scheduler_loop() -> None:
         _stop.wait(settings.scheduler_tick_seconds)
 
 
+_last_retention: datetime | None = None
+
+
 def tick() -> None:
+    global _last_retention
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
+        # Retention runs hourly, not every tick: it is a sweep over three tables and nothing it
+        # does is time-critical to the minute.
+        if _last_retention is None or now - _last_retention >= timedelta(hours=1):
+            _last_retention = now
+            try:
+                from backend.workers.retention import purge_retention
+
+                purge_retention(db)
+            except Exception:  # noqa: BLE001 - a retention failure must not stop scheduled syncs
+                log.exception("retention purge failed")
+
         for s in db.scalars(select(DataSource).where(DataSource.is_enabled)).all():
             mins = FREQ.get(s.refresh_frequency)
             if not mins:

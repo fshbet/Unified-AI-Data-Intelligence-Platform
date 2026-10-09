@@ -53,13 +53,25 @@ def humanize(name: str) -> str:
     return " ".join(fixes.get(w.lower(), w.capitalize()) for w in words)
 
 
-def connector_for(source: DataSource) -> DataConnector:
-    return create_connector(source.type, source.id, decrypt_config(dict(source.config or {})))
+def connector_for(source: DataSource, db: Session | None = None) -> DataConnector:
+    """Build a connector, attaching a resolved credential when the source uses one.
+
+    Connectors never perform authentication themselves — they read `config["_credential"]`.
+    That is what lets the same connector work with a service account, a browser sign-in or the
+    host's ambient identity without knowing which is in play.
+    """
+    cfg = decrypt_config(dict(source.config or {}))
+    mode = source.auth_mode or "credentials"
+    if db is not None and mode != "credentials":
+        from backend.auth_providers.service import get_credential
+
+        cfg["_credential"] = get_credential(db, source)
+    return create_connector(source.type, source.id, cfg)
 
 
 def sync_source(db: Session, source: DataSource, profile: bool = True, sample_rows: int | None = None) -> dict[str, Any]:
     """Discover + profile + persist. Returns summary. Idempotent (upserts by table name)."""
-    conn = connector_for(source)
+    conn = connector_for(source, db)
     summary: dict[str, Any] = {"tables": 0, "columns": 0, "errors": []}
     try:
         refresh_info = conn.refresh()

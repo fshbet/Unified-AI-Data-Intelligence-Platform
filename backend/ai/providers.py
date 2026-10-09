@@ -12,6 +12,7 @@ from typing import Any, Iterator
 
 import httpx
 
+from backend.anonymize.guard import LeakError, assert_no_leak
 from backend.core.config import settings
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,21 @@ class AIProvider:
         self.model, self.api_key, self.base_url = model, api_key, base_url
         self.temperature, self.max_tokens, self.embedding_model = temperature, max_tokens, embedding_model
         self.extra = extra or {}
+        # Set per request by the orchestrator. Every outbound body goes through _wire(), which
+        # runs the egress guard against it, so a provider added later inherits the check.
+        self.vault: Any = None
+        self.require_vault: bool = False
+
+    def _wire(self, body: dict) -> dict:
+        """Last thing before the wire. Guards the SERIALISED body, so it also covers the system
+        prompt, tool-result messages and anything a future refactor forgets to anonymise."""
+        if self.vault is not None:
+            assert_no_leak(json.dumps(body, default=str), self.vault)
+        elif self.require_vault:
+            # Fail closed on the plumbing even though the policy layer fails open: a caller that
+            # forgets to attach a vault must not silently send plaintext.
+            raise LeakError("AI call attempted without an anonymisation vault")
+        return body
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None, temperature: float | None = None, json_mode: bool = False) -> ChatResponse:
         raise NotImplementedError
@@ -70,6 +86,8 @@ class AIProvider:
         try:
             r = self.chat([{"role": "user", "content": "Reply with the single word OK."}], temperature=0)
             return {"ok": True, "message": r.content.strip()[:80], "latency_ms": int((time.perf_counter() - t0) * 1000), "model": self.model}
+        except LeakError:
+            raise  # never downgraded to a status payload: this is a security event
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "message": str(e)[:500]}
 
@@ -125,7 +143,7 @@ class OpenAICompatibleProvider(AIProvider):
             body["options"] = {"num_ctx": int(self.extra.get("num_ctx", 16384))}
         t0 = time.perf_counter()
         with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c:
-            r = c.post(self._url("chat/completions"), headers=self._headers(), json=body)
+            r = c.post(self._url("chat/completions"), headers=self._headers(), json=self._wire(body))
         if r.status_code >= 400:
             raise AIProviderError(f"{r.status_code}: {r.text[:500]}")
         data = r.json()
@@ -144,7 +162,7 @@ class OpenAICompatibleProvider(AIProvider):
     def stream(self, messages, temperature=None) -> Iterator[str]:
         body = {"model": self.model, "messages": messages, "temperature": self.temperature if temperature is None else temperature, "max_tokens": self.max_tokens, "stream": True}
         in_think = False
-        with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c, c.stream("POST", self._url("chat/completions"), headers=self._headers(), json=body) as r:
+        with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c, c.stream("POST", self._url("chat/completions"), headers=self._headers(), json=self._wire(body)) as r:
             if r.status_code >= 400:
                 r.read()
                 raise AIProviderError(f"{r.status_code}: {r.text[:500]}")
@@ -173,7 +191,7 @@ class OpenAICompatibleProvider(AIProvider):
         if not self.embedding_model:
             raise AIProviderError("No embedding model configured")
         with httpx.Client(timeout=120) as c:
-            r = c.post(self._url("embeddings"), headers=self._headers(), json={"model": self.embedding_model, "input": texts})
+            r = c.post(self._url("embeddings"), headers=self._headers(), json=self._wire({"model": self.embedding_model, "input": texts}))
         if r.status_code >= 400:
             raise AIProviderError(f"{r.status_code}: {r.text[:300]}")
         return [d["embedding"] for d in sorted(r.json()["data"], key=lambda d: d["index"])]
@@ -217,7 +235,7 @@ class AnthropicProvider(AIProvider):
             body["tools"] = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t.get("parameters", {"type": "object", "properties": {}})} for t in tools]
         t0 = time.perf_counter()
         with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c:
-            r = c.post(self._url(), headers=self._headers(), json=body)
+            r = c.post(self._url(), headers=self._headers(), json=self._wire(body))
         if r.status_code >= 400:
             raise AIProviderError(f"{r.status_code}: {r.text[:500]}")
         data = r.json()
@@ -236,7 +254,7 @@ class AnthropicProvider(AIProvider):
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": self.max_tokens, "stream": True, "temperature": self.temperature if temperature is None else temperature}
         if system:
             body["system"] = system
-        with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c, c.stream("POST", self._url(), headers=self._headers(), json=body) as r:
+        with httpx.Client(timeout=settings.ai_request_timeout_seconds) as c, c.stream("POST", self._url(), headers=self._headers(), json=self._wire(body)) as r:
             if r.status_code >= 400:
                 r.read()
                 raise AIProviderError(f"{r.status_code}: {r.text[:500]}")

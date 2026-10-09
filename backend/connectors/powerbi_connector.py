@@ -42,6 +42,7 @@ def dax_table(name: str) -> str:
 
 @register
 class PowerBIConnector(BIConnector):
+    supported_auth = ("service_account", "oauth_code", "device_code", "credentials")
     type_key = "powerbi"
     display_name = "Power BI semantic model"
     semantic_language = "dax"

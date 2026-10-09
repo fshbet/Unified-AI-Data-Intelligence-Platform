@@ -1,27 +1,36 @@
 """Data source management: CRUD, test, sync, upload, preview, health."""
 from __future__ import annotations
 
+import html
+import json
+import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import SourceIn, SourceOut, SourceUpdate
 from backend.audit.service import audit
 from backend.connectors.file_connector import SUPPORTED
-from backend.connectors.registry import create_connector, list_connector_types
+from backend.auth_providers import list_auth_modes, supported_modes_for
+from backend.auth_providers.device_code import AuthPending
+from backend.auth_providers.service import AuthError as CredAuthError
+from backend.auth_providers.service import complete_interactive, poll_interactive, start_interactive
+from backend.connectors.registry import create_connector, get_connector_class, list_connector_types
 from backend.core.config import settings
 from backend.core.crypto import decrypt_config, encrypt_config, mask_config
 from backend.core.db import get_db
 from backend.metadata.catalog import connector_for, source_freshness
-from backend.metadata.models import DataSource, Dataset, Job, Table, User
+from backend.metadata.models import DataSource, Dataset, Job, PendingAuth, Table, User
 from backend.security.access import build_access_context
 from backend.security.auth import get_current_user, require_role
 from backend.workers import jobs
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/sources", tags=["sources"])
 
 
@@ -36,7 +45,102 @@ def _out(db: Session, s: DataSource) -> SourceOut:
 
 @router.get("/types")
 def connector_types(_: User = Depends(get_current_user)):
-    return list_connector_types()
+    out = []
+    for t in list_connector_types():
+        try:
+            modes = supported_modes_for(get_connector_class(t["type"]))
+        except KeyError:
+            modes = []
+        out.append({**t, "auth_modes": modes})
+    return out
+
+
+@router.get("/auth-modes")
+def auth_modes(_: User = Depends(get_current_user)):
+    """Every authentication mode the platform knows about, with the fields each one needs."""
+    return list_auth_modes()
+
+
+# ------------------------------------------------------------------ interactive sign-in
+def _redirect_uri(request: Request, source_id: str) -> str:
+    # Built from the live request so it keeps working behind a prefix or a different port. It
+    # must be byte-identical at the authorize and token steps, so it is derived in one place.
+    return str(request.url_for("oauth_callback", source_id=source_id))
+
+
+@router.post("/{source_id}/auth/start")
+def auth_start(source_id: str, request: Request, db: Session = Depends(get_db),
+               user: User = Depends(require_role("analyst"))):
+    src = db.get(DataSource, source_id)
+    if src is None:
+        raise HTTPException(404, "Source not found")
+    try:
+        start = start_interactive(db, src, _redirect_uri(request, source_id))
+    except CredAuthError as e:
+        raise HTTPException(400, str(e)) from e
+    db.commit()
+    audit(db, user, "source.auth_start", "source", src.id, {"mode": src.auth_mode})
+    db.commit()
+    return {"mode": start.mode, "url": start.url, "user_code": start.user_code,
+            "expires_in": start.expires_in, "poll_interval": start.poll_interval,
+            "message": start.message}
+
+
+@router.get("/{source_id}/auth/callback", name="oauth_callback", response_class=HTMLResponse)
+def oauth_callback(source_id: str, request: Request, db: Session = Depends(get_db)):
+    """The OAuth redirect target. Unauthenticated by necessity — the browser arrives here from
+    the provider — so trust rests entirely on the single-use `state` issued by auth/start."""
+    params = dict(request.query_params)
+    state = params.get("state", "")
+    src = db.get(DataSource, source_id)
+    if src is None:
+        raise HTTPException(404, "Source not found")
+    try:
+        complete_interactive(db, src, params, state)
+        db.commit()
+        message, ok = "Connected. You can close this window.", True
+    except Exception as exc:  # noqa: BLE001 - this renders in a browser, not an API client
+        db.rollback()
+        # NEVER reflect provider- or attacker-supplied text. `error_description` arrives
+        # straight from the query string, so interpolating the exception into HTML was a
+        # reflected XSS on an unauthenticated endpoint. The detail belongs in the log.
+        log.warning("oauth callback failed for source %s: %s", source_id, exc)
+        message, ok = "Authorisation failed. Close this window and try again.", False
+
+    # json.dumps produces a correctly escaped JS literal, so a crafted source_id cannot break
+    # out of the string. targetOrigin is explicit rather than '*'.
+    payload = json.dumps({"type": "edi-auth", "ok": ok, "source": source_id})
+    target = json.dumps(settings.cors_origins[0] if settings.cors_origins else "/")
+    return HTMLResponse(
+        "<!doctype html><meta charset=utf-8>"
+        f"<title>{'Connected' if ok else 'Failed'}</title>"
+        '<body style="font:14px system-ui;padding:2rem"><p>'
+        f"{html.escape(message)}</p>"
+        f"<script>try{{window.opener&&window.opener.postMessage({payload},{target});}}catch(e){{}}"
+        "setTimeout(()=>window.close(),1200);</script></body>",
+        headers={"Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'",
+                 "X-Content-Type-Options": "nosniff"})
+
+
+@router.post("/{source_id}/auth/poll")
+def auth_poll(source_id: str, db: Session = Depends(get_db), user: User = Depends(require_role("analyst"))):
+    """Device flow. 202 means 'not yet' — the client keeps polling at `retry_after`."""
+    src = db.get(DataSource, source_id)
+    if src is None:
+        raise HTTPException(404, "Source not found")
+    pending = db.query(PendingAuth).filter_by(source_id=source_id).order_by(PendingAuth.created_at.desc()).first()
+    if pending is None:
+        raise HTTPException(400, "No authorisation is in progress for this source")
+    try:
+        poll_interactive(db, src, pending.state)
+        db.commit()
+        return {"status": "connected"}
+    except AuthPending as p:
+        db.rollback()
+        return JSONResponse(status_code=202, content={"status": "pending", "retry_after": p.interval})
+    except CredAuthError as e:
+        db.rollback()
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("", response_model=list[SourceOut])
@@ -107,7 +211,7 @@ def delete_source(source_id: str, db: Session = Depends(get_db), user: User = De
 @router.post("/{source_id}/test")
 def test_source(source_id: str, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     s = db.get(DataSource, source_id) or _404()
-    conn = connector_for(s)
+    conn = connector_for(s, db)
     try:
         res = conn.test_connection()
     finally:
@@ -171,7 +275,7 @@ def preview(source_id: str, table: str, schema: str | None = None, n: int = 50, 
     t = db.scalar(select(Table).join(Dataset).where(Dataset.source_id == s.id, Table.table_name == table))
     if t and not ctx.can_see_table(t.id):
         raise HTTPException(403, "Access denied to this table")
-    conn = connector_for(s)
+    conn = connector_for(s, db)
     try:
         r = conn.sample_data(table, schema, n=min(n, 200))
     finally:
@@ -188,7 +292,7 @@ def semantic_model(source_id: str, db: Session = Depends(get_db), _: User = Depe
     from backend.connectors.bi_base import BIConnector
 
     s = db.get(DataSource, source_id) or _404()
-    conn = connector_for(s)
+    conn = connector_for(s, db)
     try:
         if not isinstance(conn, BIConnector):
             raise HTTPException(400, f"'{s.name}' is not a BI source with a semantic model")
@@ -206,7 +310,7 @@ def reimport_semantic_model(source_id: str, db: Session = Depends(get_db), user:
     from backend.semantic.bi_import import import_semantic_model
 
     s = db.get(DataSource, source_id) or _404()
-    conn = connector_for(s)
+    conn = connector_for(s, db)
     try:
         if not isinstance(conn, BIConnector):
             raise HTTPException(400, f"'{s.name}' is not a BI source with a semantic model")

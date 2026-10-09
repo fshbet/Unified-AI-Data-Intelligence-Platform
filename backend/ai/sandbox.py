@@ -2,8 +2,12 @@
 no network, a wall-clock timeout and result size cap. Input data is passed as JSON and exposed as
 pandas DataFrames; the script must set `result` (dict/list/scalar) which is returned.
 
-ponytail: subprocess + import whitelist, not a kernel-level sandbox. Run the worker in a
-container / gVisor / seccomp profile for hostile multi-tenant deployments."""
+SECURITY: this is a speed bump, not a sandbox, and it is DISABLED BY DEFAULT.
+The builtins filter removes open/exec/eval/__import__ but leaves attribute traversal, so
+`().__class__.__base__.__subclasses__()` reaches subprocess.Popen and executes arbitrary
+commands as this process. That has been verified. Treat `run_analysis` as "run untrusted code
+on this host" and enable it only inside a container with network_mode: none, a read-only
+filesystem, dropped capabilities and a memory/pid limit."""
 from __future__ import annotations
 
 import json
@@ -51,8 +55,24 @@ except Exception as e:
 '''
 
 
-def run_analysis(code: str, data: dict[str, dict[str, Any]], timeout: int = 30) -> dict[str, Any]:
-    """data: {"name": {"columns": [...], "rows": [[...]]}}"""
+class SandboxDisabled(RuntimeError):
+    pass
+
+
+def run_analysis(code: str, data: dict[str, dict[str, Any]], timeout: int | None = None) -> dict[str, Any]:
+    """data: {"name": {"columns": [...], "rows": [[...]]}}
+
+    Refuses unless explicitly enabled. The subprocess guard below raises the cost of an escape
+    but does not prevent one — see the module docstring and EDI_PYTHON_ANALYSIS_ENABLED.
+    """
+    from backend.core.config import settings
+
+    if not settings.python_analysis_enabled:
+        raise SandboxDisabled(
+            "Python analysis is disabled. It executes model-authored code, and the in-process "
+            "guard is not a security boundary. Set EDI_PYTHON_ANALYSIS_ENABLED=true only when "
+            "this process runs inside an isolated container.")
+    timeout = timeout or settings.python_analysis_timeout_seconds
     with tempfile.TemporaryDirectory() as d:
         runner = Path(d) / "runner.py"
         runner.write_text(RUNNER, encoding="utf-8")

@@ -63,6 +63,7 @@ def slug(name: str) -> str:
 
 @register
 class TableauConnector(BIConnector):
+    supported_auth = ("credentials",)  # PAT or username/password; Tableau has no SP flow
     type_key = "tableau"
     display_name = "Tableau Server / Cloud"
     semantic_language = "tableau"

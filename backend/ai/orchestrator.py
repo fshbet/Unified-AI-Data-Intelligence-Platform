@@ -2,7 +2,12 @@
 evidence-cited answer. Yields events so the API can stream progress to the UI.
 
 Never sends raw tables to the LLM. The model sees: the plan, compact investigation results (all with
-query refs), the metric catalogue and whatever it fetches through permission-checked tools."""
+query refs), the metric catalogue and whatever it fetches through permission-checked tools.
+
+Values from protected columns never reach the provider at all: every message is scrubbed through
+`backend.anonymize` on the way in, the provider's egress guard refuses any payload that still
+contains an original, and the model's answer is mapped back to real values before it is stored or
+shown. See docs/security.md."""
 from __future__ import annotations
 
 import json
@@ -17,6 +22,8 @@ from backend.ai.planner import QueryPlan, plan_question
 from backend.ai.providers import AIProvider, AIProviderError
 from backend.ai.service import UsageTracker, get_provider
 from backend.ai.tools import ToolBox, tool_definitions
+from backend.anonymize import Anonymizer, new_job
+from backend.anonymize.policy import policies_for_tables, protected_count
 from backend.analytics.insights import data_anchor
 from backend.analytics.investigation import Investigation, investigate
 from backend.core.config import settings
@@ -25,6 +32,20 @@ from backend.query_engine.periods import Period, shift
 from backend.security.access import build_access_context
 
 log = logging.getLogger(__name__)
+
+ANON_PROMPT = """
+
+IDENTIFIERS ARE ANONYMISED
+Personal and identifying values have been replaced with tokens such as [[PER_0001]], [[EML_0002]]
+or [[ORG_0003]], and [[REDACTED]] where a value was withheld entirely.
+- Each token is one real, distinct entity. The same token always means the same entity.
+- Refer to entities by their token, copied EXACTLY as written. Do not reformat, translate or
+  prettify them, and never invent a token that does not appear in the data.
+- Dates in protected columns are shifted by a constant, so intervals between them are accurate
+  but absolute dates are not. Do not state an absolute date from a shifted column.
+- Banded values such as "90000-100000" are ranges, not exact figures.
+- Numbers that are not tokenised are real — use them for all arithmetic.
+"""
 
 SYSTEM_PROMPT = """You are an enterprise data analyst working inside a governed data intelligence platform.
 You reason over the organisation's whole data ecosystem (finance, sales, HR, inventory, support, marketing, operations...), not a single table.
@@ -68,6 +89,34 @@ def _fmt_ctx(metric: Metric | None, plan: QueryPlan, investigation: Investigatio
     return "\n\n".join(parts)
 
 
+class _StreamRestorer:
+    """De-anonymise a token stream without ever showing a half-written token.
+
+    The model emits "[[PER_" and "0001]]" in separate chunks, so text after an unterminated
+    "[[" is held back until it completes. Without this the user watches raw tokens appear and
+    then get corrected, which looks broken even though the final answer is right.
+    """
+
+    def __init__(self, anon: Anonymizer) -> None:
+        self.anon, self.buf = anon, ""
+
+    def feed(self, delta: str) -> str:
+        self.buf += delta
+        cut = self.buf.rfind("[[")
+        if cut != -1 and "]]" not in self.buf[cut:]:
+            hold = cut
+        elif self.buf.endswith("["):   # could be the first half of "[["
+            hold = len(self.buf) - 1
+        else:
+            hold = len(self.buf)
+        out, self.buf = self.buf[:hold], self.buf[hold:]
+        return self.anon.deanonymize(out)[0] if out else ""
+
+    def flush(self) -> str:
+        out, self.buf = self.buf, ""
+        return self.anon.deanonymize(out)[0] if out else ""
+
+
 def run(db: Session, user: User, conversation: Conversation, question: str) -> Iterator[dict[str, Any]]:
     """Generator of events: plan, investigation, tool, token, done, error."""
     ctx = build_access_context(db, user)
@@ -99,14 +148,26 @@ def run(db: Session, user: User, conversation: Conversation, question: str) -> I
 
     sources = db.scalars(select(DataSource).where(DataSource.is_enabled)).all()
     toolbox = ToolBox(db, ctx, conversation.id, anchor)
-    history = [m for m in conversation.messages if m.role in {"user", "assistant"}][-6:]
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for m in history:
-        messages.append({"role": m.role, "content": m.content[:4000]})
-    messages.append({"role": "system", "content": _fmt_ctx(metric, plan, investigation, anchor, sources, conversation.context or {})})
-    messages.append({"role": "user", "content": question})
 
-    answer = ""
+    # The AI privacy boundary. One job per turn: tokens stay stable within this answer so the
+    # model can correlate rows, and differ next time so they never become a durable identifier.
+    # Everything that reaches `messages` below is scrubbed on the way in.
+    policies = policies_for_tables(db)
+    anon = Anonymizer(db, new_job(db, conversation.id, user.id), policies)
+    toolbox.anonymizer = anon
+    if provider is not None:
+        provider.vault, provider.require_vault = anon.vault, True
+
+    history = [m for m in conversation.messages if m.role in {"user", "assistant"}][-6:]
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT + ANON_PROMPT}]
+    for m in history:
+        # Past assistant answers were de-anonymised before being stored, so replaying them
+        # verbatim would hand the model the very values this layer exists to withhold.
+        messages.append({"role": m.role, "content": anon.scrub_text(m.content[:4000])})
+    messages.append({"role": "system", "content": anon.scrub_text(_fmt_ctx(metric, plan, investigation, anchor, sources, conversation.context or {}))})
+    messages.append({"role": "user", "content": anon.scrub_text(question)})
+
+    answer, unresolved = "", []
     if provider is None:
         yield {"type": "status", "message": "No AI provider configured — rendering deterministic analysis"}
         answer = template_answer(plan, investigation, toolbox, db, ctx)
@@ -118,9 +179,17 @@ def run(db: Session, user: User, conversation: Conversation, question: str) -> I
                 yield ev
             messages.append({"role": "system", "content": "Write the final answer now. Cover EVERY evidence item and every domain listed in the investigation (finance, sales, hr, inventory, operations, support, marketing...) — do not omit HR headcount/attrition or inventory availability findings when present. Cite query refs. If the deterministic investigation and tool results disagree, say so."})
             yield {"type": "status", "message": "Writing answer"}
+            raw = ""
+            restore = _StreamRestorer(anon)
             for delta in provider.stream(messages):
-                answer += delta
-                yield {"type": "token", "text": delta}
+                raw += delta
+                shown = restore.feed(delta)
+                if shown:
+                    yield {"type": "token", "text": shown}
+            tail = restore.flush()
+            if tail:
+                yield {"type": "token", "text": tail}
+            answer, unresolved = anon.deanonymize(raw)
             if not answer.strip():
                 answer = template_answer(plan, investigation, toolbox, db, ctx)
                 yield {"type": "token", "text": answer}
@@ -133,6 +202,21 @@ def run(db: Session, user: User, conversation: Conversation, question: str) -> I
 
     answer, unverified = validate_citations(answer, (investigation.queries if investigation else []) + toolbox.queries)
     payload = build_payload(plan, investigation, toolbox, usage, answer)
+    payload["anonymization"] = {
+        "job_id": anon.job.id,
+        "columns_protected": len(anon.protected_columns),
+        "policies_active": protected_count(policies),
+        "tokens_issued": anon.tokens_issued,
+    }
+    if unresolved:
+        # The model referenced an entity that was never in the data: a hallucination, not a
+        # formatting slip. Say so rather than printing a dangling token at the user.
+        payload["warnings"].append(
+            f"The model referenced {len(unresolved)} entity token(s) not present in the data "
+            f"({', '.join(unresolved[:5])}); those statements are unverified.")
+        if payload["confidence"]["level"] == "high":
+            payload["confidence"]["level"] = "medium"
+        payload["confidence"]["reasons"].append(f"{len(unresolved)} hallucinated entity reference(s)")
     if unverified:
         payload["warnings"].append(f"{len(unverified)} citation(s) in the narrative do not match any executed query and were marked unverified: {', '.join(unverified[:5])}")
         if payload["confidence"]["level"] == "high":
@@ -205,7 +289,16 @@ def _tool_loop(provider: AIProvider, messages: list[dict], toolbox: ToolBox, usa
             break  # model is looping
     # fold gathered evidence into the final-answer messages (tool transcripts are dropped, results kept)
     if toolbox.queries or toolbox.calls:
-        gathered = {"tool_results": [{"query_ref": q.get("ref"), "purpose": q.get("purpose"), "columns": q.get("columns"), "rows": q.get("rows", [])[:15], "error": q.get("error")} for q in toolbox.queries[-12:]]}
+        # toolbox.queries holds the REAL rows (they are the evidence shown to the authorised
+        # user). Anonymise a copy here — this block goes into the prompt.
+        def _ev(q: dict) -> dict:
+            rows = q.get("rows", [])[:15]
+            cols = q.get("columns") or []
+            if toolbox.anonymizer is not None and rows and cols:
+                rows, _ = toolbox.anonymizer.anonymize_result(cols, [list(r) for r in rows], None)
+            return {"query_ref": q.get("ref"), "purpose": q.get("purpose"), "columns": cols, "rows": rows, "error": q.get("error")}
+
+        gathered = {"tool_results": [_ev(q) for q in toolbox.queries[-12:]]}
         messages.append({"role": "system", "content": "Additional evidence gathered via tools: " + json.dumps(gathered, default=str)[:8000]})
 
 

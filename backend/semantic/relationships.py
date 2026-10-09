@@ -79,7 +79,7 @@ def discover_relationships(db: Session, source_ids: list[str] | None = None, min
         if col.id not in sample_cache:
             src = col.table.dataset.source_id
             if src not in conn_cache:
-                conn_cache[src] = connector_for(db.get(DataSource, src))
+                conn_cache[src] = connector_for(db.get(DataSource, src), db)
             try:
                 sample_cache[col.id] = _distinct_sample(conn_cache[src], col.table, col)
             except Exception as e:  # noqa: BLE001

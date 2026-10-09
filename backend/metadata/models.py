@@ -71,6 +71,10 @@ class DataSource(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), unique=True)
     type: Mapped[str] = mapped_column(String(64), index=True)  # connector registry key
     config: Mapped[dict] = mapped_column(JSON, default=dict)  # encrypted secret fields
+    # Which AuthProvider mode this source uses. "credentials" is what every pre-existing source
+    # does (secrets inline in `config`), so existing rows keep working untouched.
+    auth_mode: Mapped[str] = mapped_column(String(32), default="credentials")
+    auth_config: Mapped[dict] = mapped_column(JSON, default=dict)  # encrypted secret fields
     owner: Mapped[str | None] = mapped_column(String(255))
     department: Mapped[str | None] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(Text)
@@ -148,6 +152,12 @@ class Column(Base, TimestampMixin):
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     sensitivity: Mapped[str] = mapped_column(String(16), default="public")  # public|sensitive|pii|restricted
     pii_type: Mapped[str | None] = mapped_column(String(32))
+    # AI anonymisation policy. NULL strategy means "use the default derived from pii_type"
+    # (see anonymize/policy.py), so an existing catalog is protected without a backfill.
+    anon_strategy: Mapped[str | None] = mapped_column(String(16))
+    anon_entity: Mapped[str | None] = mapped_column(String(16))
+    anon_params: Mapped[dict] = mapped_column(JSON, default=dict)
+    anon_accepted_by: Mapped[str | None] = mapped_column(String(255))
     sample_values: Mapped[list] = mapped_column(JSON, default=list)
     stats: Mapped[dict] = mapped_column(JSON, default=dict)  # min/max/mean/median/std/percentiles/distinct/nulls/freq
     ai_suggestion: Mapped[dict | None] = mapped_column(JSON)
@@ -395,6 +405,83 @@ class AuditLog(Base):
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     ip: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class SourceCredential(Base):
+    """The live credential for a source. One row per source, replaced on every refresh."""
+    __tablename__ = "source_credentials"
+    source_id: Mapped[str] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # bearer|basic|api_key|dsn|none
+    secret_enc: Mapped[str] = mapped_column(Text)
+    refresh_enc: Mapped[str | None] = mapped_column(Text)
+    username: Mapped[str | None] = mapped_column(String(255))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class PendingAuth(Base):
+    """An interactive flow in progress. Short-lived, single-use, and the only thing that makes a
+    callback trustworthy: a `state` we did not issue has no row here and is rejected."""
+    __tablename__ = "pending_auth"
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"), index=True)
+    mode: Mapped[str] = mapped_column(String(32))
+    payload_enc: Mapped[str] = mapped_column(Text)  # code_verifier / device_code
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ApiKey(Base):
+    """A key for an external application consuming the unified API.
+
+    Stored as a sha256 hash — the key itself is shown once at creation and is never recoverable.
+    `entities` and `sources` are allowlists applied INSIDE the query, not as a post-filter, so a
+    restricted key cannot learn the size of what it cannot see.
+    """
+    __tablename__ = "api_keys"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(24))  # for display only, e.g. "edi_live_a3f9"
+    user_id: Mapped[str | None] = mapped_column(String(32))  # acts with this user's permissions
+    scopes: Mapped[list] = mapped_column(JSON, default=list)  # read | ask
+    entities: Mapped[list | None] = mapped_column(JSON)       # NULL = all
+    sources: Mapped[list | None] = mapped_column(JSON)        # NULL = all
+    rate_limit_per_min: Mapped[int] = mapped_column(Integer, default=120)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AnonJob(Base):
+    """One anonymisation job = one conversation turn's worth of tokens.
+
+    Scoped per job so the same person gets a stable token within an answer but a different one
+    in the next conversation; a provider retaining prompts cannot join the two.
+    """
+    __tablename__ = "anon_jobs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    conversation_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(32))
+    salt: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AnonToken(Base):
+    __tablename__ = "anon_tokens"
+    job_id: Mapped[str] = mapped_column(ForeignKey("anon_jobs.id", ondelete="CASCADE"), primary_key=True)
+    token: Mapped[str] = mapped_column(String(32), primary_key=True)
+    entity: Mapped[str] = mapped_column(String(16))
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    fingerprint: Mapped[str] = mapped_column(String(64))  # keyed HMAC, never the original
+    original_enc: Mapped[str] = mapped_column(Text)       # Fernet ciphertext
+
+
+Index("anon_tokens_fp", AnonToken.job_id, AnonToken.fingerprint, unique=True)
 
 
 class Job(Base):

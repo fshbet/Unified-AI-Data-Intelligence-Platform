@@ -156,15 +156,33 @@ def test_orchestrator_without_llm_renders_deterministic_answer(db, admin):
     assert events[-1]["payload"]["plan"]["is_follow_up"] and events[-1]["payload"]["plan"]["metric"] == "revenue"
 
 
-def test_python_sandbox_is_restricted():
-    from backend.ai.sandbox import run_analysis
+def test_python_sandbox_guard_blocks_the_obvious_routes(monkeypatch):
+    """The in-process guard, exercised with the feature explicitly enabled.
 
+    This asserts defence in depth, NOT a security boundary: the guard stops `import os` and
+    `open()`, but attribute traversal still reaches subprocess.Popen, so model-authored code can
+    execute commands on the host. That is why `python_analysis_enabled` defaults to False and
+    why the escape itself is pinned in tests/security/test_attack_surface.py.
+    """
+    from backend.ai import sandbox
+    from backend.core.config import settings
+
+    monkeypatch.setattr(settings, "python_analysis_enabled", True)
     data = {"Q-1": {"columns": ["x", "y"], "rows": [[1, 2], [2, 4], [3, 6]]}}
-    ok = run_analysis("df = data['Q-1']\nresult = {'corr': float(df.x.corr(df.y))}", data)
+    ok = sandbox.run_analysis("df = data['Q-1']\nresult = {'corr': float(df.x.corr(df.y))}", data)
     assert ok["ok"] and abs(ok["result"]["corr"] - 1) < 1e-9
-    bad = run_analysis("import os\nresult = os.listdir('.')", data)
+    bad = sandbox.run_analysis("import os\nresult = os.listdir('.')", data)
     assert not bad["ok"] and "not allowed" in bad["error"]
-    bad = run_analysis("result = open('x.txt','w')", data)
+    bad = sandbox.run_analysis("result = open('x.txt','w')", data)
     assert not bad["ok"]
-    slow = run_analysis("while True: pass", data, timeout=3)
+    slow = sandbox.run_analysis("while True: pass", data, timeout=3)
     assert not slow["ok"] and "timeout" in slow["error"]
+
+
+def test_python_sandbox_is_off_unless_explicitly_enabled():
+    from backend.ai.sandbox import SandboxDisabled, run_analysis
+    from backend.core.config import settings
+
+    assert settings.python_analysis_enabled is False
+    with pytest.raises(SandboxDisabled):
+        run_analysis("result = 1", {})

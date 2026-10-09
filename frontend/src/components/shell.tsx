@@ -4,7 +4,7 @@ import { useAuth, useTheme } from "@/lib/auth";
 import { cn } from "./ui";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, BookOpen, Bot, Database, FileSearch, Gauge, GitBranch, History, Layers, Lightbulb, LogOut, Moon, Network, Settings, ShieldCheck, Sparkles, Sun, Table2 } from "lucide-react";
+import { Activity, BookOpen, Bot, Database, FileSearch, Gauge, GitBranch, History, Layers, Lightbulb, LogOut, Moon, Network, Settings, Lock, ShieldCheck, Sparkles, Sun, Table2 } from "lucide-react";
 import { useEffect } from "react";
 
 const NAV = [
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/metrics", label: "Metrics", icon: Activity },
   { href: "/relationships", label: "Relationships", icon: Network },
   { href: "/quality", label: "Data Quality", icon: ShieldCheck },
+  { href: "/privacy", label: "AI Privacy", icon: Lock, minRole: "analyst" as const },
   { href: "/assistant", label: "AI Assistant", icon: Bot },
   { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/history", label: "Query History", icon: History },
@@ -54,7 +55,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
-          {NAV.filter((n) => !n.admin || user.role === "admin").map((n) => {
+          {NAV.filter((n) => (!n.admin || user.role === "admin") && (!n.minRole || user.role !== "viewer")).map((n) => {
             const active = path === n.href || path.startsWith(n.href + "/");
             return (
               <Link key={n.href} href={n.href} className={cn("mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors", active ? "bg-primary/10 text-primary" : "text-muted hover:bg-surface-2 hover:text-text")}>

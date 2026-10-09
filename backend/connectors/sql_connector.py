@@ -141,6 +141,8 @@ class SQLAlchemyConnector(DataConnector):
 
 @register
 class PostgresConnector(SQLAlchemyConnector):
+    # ambient = peer/IAM auth; service_account = a cloud IAM access token used as the password
+    supported_auth = ("credentials", "ambient", "service_account")
     type_key = "postgresql"
     display_name = "PostgreSQL"
     dialect = "postgresql"
@@ -160,6 +162,7 @@ class PostgresConnector(SQLAlchemyConnector):
 
 @register
 class MySQLConnector(SQLAlchemyConnector):
+    supported_auth = ("credentials", "ambient")
     type_key = "mysql"
     display_name = "MySQL / MariaDB"
     dialect = "mysql"
@@ -181,6 +184,8 @@ class MySQLConnector(SQLAlchemyConnector):
 
 @register
 class SQLServerConnector(SQLAlchemyConnector):
+    # ambient = Windows integrated auth; service_account = an Entra token for Azure SQL
+    supported_auth = ("credentials", "ambient", "service_account")
     type_key = "mssql"
     display_name = "Microsoft SQL Server"
     dialect = "mssql"
